@@ -1,78 +1,52 @@
 #!/usr/bin/env python3
 """
-Manual test script for bulk operations    client.close()This script tests the bulk operations functionality:
-- MGET - Get multiple keys in one command
-- MSET - Set multiple key-value pairs
-- TRUNCATE - Clear all keys/values in the store
+Manual-style tests for bulk operations in MerkleKV using the bulk_ops_server fixture.
 """
 
 import pytest
 from conftest import connect_to_server
 
-def test_mset(server):
-    """Test MSET command."""
-    print("Testing MSET...")
+
+def recv_str(client):
+    return client.recv(4096).decode().strip()
+
+
+def test_mset(bulk_ops_server):
     client = connect_to_server()
-    
-    # Set multiple key-value pairs using MSET
-    client.send(b"MSET key1 value1 key2 value2 key3 value3\r\n")
-    response = client.recv(1024)
-    print(f"MSET response: {response}")
-    
-    # Verify the keys were set
-    client.send(b"GET key1\r\n")
-    response = client.recv(1024)
-    print(f"GET key1 response: {response}")
-    
-    client.send(b"GET key2\r\n")
-    response = client.recv(1024)
-    print(f"GET key2 response: {response}")
-    
-    client.send(b"GET key3\r\n")
-    response = client.recv(1024)
-    print(f"GET key3 response: {response}")
-    
-    client.close()
+    try:
+        client.send(b"MSET key1 value1 key2 value2 key3 value3\r\n")
+        resp = recv_str(client)
+        assert resp == "OK"
 
-def test_mget(server):
-    """Test MGET command."""
-    print("\nTesting MGET...")
+        client.send(b"GET key1\r\n")
+        assert recv_str(client) == "VALUE value1"
+        client.send(b"GET key2\r\n")
+        assert recv_str(client) == "VALUE value2"
+        client.send(b"GET key3\r\n")
+        assert recv_str(client) == "VALUE value3"
+    finally:
+        client.close()
+
+
+def test_mget(bulk_ops_server):
     client = connect_to_server()
-    
-    # Get multiple keys using MGET
-    client.send(b"MGET key1 key2 key3\r\n")
-    response = client.recv(1024)
-    print(f"MGET response: {response}")
-    
-    client.close()
+    try:
+        client.send(b"MGET key1 key2 key3\r\n")
+        resp = recv_str(client)
+        # Accept either newline or space-separated values depending on server impl
+        assert "value1" in resp and "value2" in resp and "value3" in resp
+    finally:
+        client.close()
 
-def test_truncate(server):
-    """Test TRUNCATE command."""
-    print("\nTesting TRUNCATE...")
+
+def test_truncate(bulk_ops_server):
     client = connect_to_server()
-    
-    # Truncate the store
-    client.send(b"TRUNCATE\r\n")
-    response = client.recv(1024)
-    print(f"TRUNCATE response: {response}")
-    
-    # Verify keys no longer exist
-    client.send(b"GET key1\r\n")
-    response = client.recv(1024)
-    print(f"GET key1 after TRUNCATE: {response}")
-    
-    client.close()
+    try:
+        client.send(b"TRUNCATE\r\n")
+        resp = recv_str(client)
+        assert resp == "OK"
 
-def main():
-    """Run all tests."""
-    print("Starting manual bulk operations tests...")
-    
-    # Run tests
-    test_mset()
-    test_mget()
-    test_truncate()
-    
-    print("\nAll tests completed!")
-
-if __name__ == "__main__":
-    main()
+        client.send(b"GET key1\r\n")
+        assert recv_str(client) == "NOT_FOUND"
+    finally:
+        client.close()
