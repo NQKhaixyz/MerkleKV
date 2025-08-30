@@ -131,7 +131,7 @@ impl Replicator {
             client,
             topic_prefix: config.replication.topic_prefix.clone(),
             node_id: config.replication.client_id.clone(),
-            codec: ChangeCodec::Cbor,
+            codec: ChangeCodec::Json,
             tx,
         })
     }
