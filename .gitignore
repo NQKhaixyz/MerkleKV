@@ -20,8 +20,33 @@ target
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Python/Dev tools (local only)
+# Python virtual environments and artifacts
 .venv/
+venv/
+ENV/
 __pycache__/
+*.py[cod]
 .pytest_cache/
 .benchmarks/
+.coverage*
+htmlcov/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Node
+node_modules/
+
+# Local env files
+*.env
+.env.*
+*.local
