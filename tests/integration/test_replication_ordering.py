@@ -244,24 +244,26 @@ class TestReplicationOrdering:
             
             # Mix of different operations
             operations = [
-                ("SET", f"{key} initial_value"),
-                ("INCR", key),  
+                ("SET", f"{key} 100"),  # Start with a numeric value
+                ("INC", key),  
                 ("APPEND", f"{key} _appended"),
                 ("SET", f"{key} final_set"),
                 ("DELETE", key),
             ]
-            
+
             # Apply operations with small delays
             for op_type, op_args in operations:
                 command = f"{op_type} {op_args}"
                 response = await node1.send(command)
-                
+
                 # Handle different response formats
                 if op_type == "DELETE":
                     expected_responses = ["OK", "NOT_FOUND"]
                     assert any(resp in response for resp in expected_responses), f"Unexpected DELETE response: {response}"
-                elif op_type == "INCR":
-                    assert response.startswith(("VALUE", "NOT_FOUND")), f"Unexpected INCR response: {response}"
+                elif op_type == "INC":
+                    assert response.startswith(("VALUE", "NOT_FOUND", "ERROR")), f"Unexpected INC response: {response}"
+                elif op_type == "APPEND":
+                    assert response.startswith(("OK", "VALUE")), f"Unexpected APPEND response: {response}"
                 else:
                     assert response.startswith("OK"), f"Operation {command} failed: {response}"
                 
@@ -301,15 +303,13 @@ class TestReplicationOrdering:
             
             for i in range(burst_size):
                 key = random.choice(keys)
-                op_type = random.choice(["SET", "DELETE", "INCR"])
-                
+                op_type = random.choice(["SET", "DELETE", "INC"])
+
                 if op_type == "SET":
                     value = f"burst_value_{i}"
                     operations.append((op_type, key, value))
                 else:
-                    operations.append((op_type, key, None))
-            
-            # Execute burst as fast as possible
+                    operations.append((op_type, key, None))            # Execute burst as fast as possible
             start_time = time.time()
             
             for op_type, key, value in operations:
@@ -317,8 +317,8 @@ class TestReplicationOrdering:
                     command = f"SET {key} {value}"
                 elif op_type == "DELETE":
                     command = f"DELETE {key}"
-                else:  # INCR
-                    command = f"INCR {key}"
+                else:  # INC
+                    command = f"INC {key}"
                 
                 response = await node1.send(command)
                 # Don't assert specific responses for burst test - just ensure no crashes

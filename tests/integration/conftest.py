@@ -444,7 +444,7 @@ class ReplicationTestHarness:
         self.temp_configs: List[Path] = []
         
         # Get MQTT broker settings from environment
-        self.mqtt_broker = os.environ.get("MQTT_BROKER_HOST", "test.mosquitto.org")
+        self.mqtt_broker = os.environ.get("MQTT_BROKER_HOST", "localhost")
         self.mqtt_port = int(os.environ.get("MQTT_BROKER_PORT", "1883"))
     
     async def create_node(self, client_id: str, port: int) -> NodeHandle:

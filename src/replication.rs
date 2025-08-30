@@ -38,7 +38,7 @@
 //! - Conflict resolution for concurrent writes
 
 use anyhow::Result;
-use log::{error, info, warn};
+use log::{error, warn};
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -238,6 +238,7 @@ impl Replicator {
         tokio::spawn(async move {
             let mut seen: HashSet<[u8; 16]> = HashSet::new();
             let mut last_ts: HashMap<String, u64> = HashMap::new();
+            let mut last_op_id_map: HashMap<String, [u8; 16]> = HashMap::new();
             loop {
                 let ev = match rx.recv().await {
                     Ok(ev) => ev,
@@ -248,8 +249,19 @@ impl Replicator {
                 };
                 if ev.src == node_id { continue; } // loop prevention
                 if seen.contains(&ev.op_id) { continue; } // idempotency
+                
                 let current_ts = last_ts.get(&ev.key).cloned().unwrap_or(0);
-                if ev.ts < current_ts { continue; } // LWW
+                if ev.ts < current_ts {
+                    continue; // LWW: event is older, skip
+                }
+                if ev.ts == current_ts {
+                    // Tie-breaking: use op_id ordering
+                    if let Some(last_ev_op_id) = last_op_id_map.get(&ev.key) {
+                        if ev.op_id <= *last_ev_op_id {
+                            continue; // Already seen or lower priority
+                        }
+                    }
+                }
 
                 let mut guard = store.lock().await;
                 match ev.op {
@@ -270,6 +282,7 @@ impl Replicator {
                 }
                 // Update LWW state and dedupe set
                 last_ts.insert(ev.key.clone(), ev.ts);
+                last_op_id_map.insert(ev.key.clone(), ev.op_id);
                 seen.insert(ev.op_id);
 
                 // TODO: Update Merkle tree – in this prototype the store engines
