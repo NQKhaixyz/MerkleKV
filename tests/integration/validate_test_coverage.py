@@ -42,7 +42,11 @@ def main():
         ],
         "Replication": [
             "test_replication.py",
-            "test_replication_simple.py"  # Note: This one runs via script
+            "test_replication_simple.py",  # Note: This one runs via script
+            "test_replication_ordering.py",
+            "test_replication_malformed_payloads.py",
+            "test_replication_broker_outage.py",
+            "test_replication_clock_skew.py"
         ],
         "Performance": [
             "test_benchmark.py"
