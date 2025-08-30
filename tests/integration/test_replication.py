@@ -6,7 +6,7 @@ This module tests the real-time replication of write operations across
 MerkleKV nodes using MQTT as the message transport.
 
 Test Setup:
-- Uses public MQTT broker: test.mosquitto.org:1883
+- Uses local MQTT broker: localhost:1883
 - Creates multiple MerkleKV server instances
 - Verifies that write operations on one node are replicated to others
 - Tests various operations: SET, DELETE, INC, DEC, APPEND, PREPEND
@@ -61,7 +61,7 @@ class MQTTTestClient:
             client.on_connect = self.on_connect
             client.on_message = self.on_message
             
-            client.connect("test.mosquitto.org", 1883, 60)
+            client.connect("localhost", 1883, 60)
             client.loop_start()
             
             # Wait for connection
@@ -382,7 +382,7 @@ async def test_malformed_mqtt_message_handling(replication_setup):
                 
         client = mqtt.Client()
         client.on_connect = on_connect
-        client.connect("test.mosquitto.org", 1883, 60)
+        client.connect("localhost", 1883, 60)
         client.loop_start()
         
         # Wait a bit
@@ -391,15 +391,15 @@ async def test_malformed_mqtt_message_handling(replication_setup):
         client.loop_stop()
         client.disconnect()
         
+    except Exception as e:
+        print(f"MQTT client error (expected in some cases): {e}")
+
     # Verify the node is still responsive
     result = await node1.send("SET test_after_malformed success")
     assert result == "OK"
 
     result = await node1.send("GET test_after_malformed")
     assert result == "VALUE success"
-        
-    except Exception as e:
-        print(f"MQTT client error (expected in some cases): {e}")
 
 if __name__ == "__main__":
     # Run specific test
