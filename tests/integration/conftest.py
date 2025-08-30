@@ -174,7 +174,11 @@ client_id = "test_node"
         """Stop the server process asynchronously."""
         if self.process:
             console.print("[red]Stopping MerkleKV server...[/red]")
-            self.process.terminate()
+            try:
+                self.process.terminate()
+            except ProcessLookupError:
+                # Process already terminated
+                pass
             
             try:
                 await asyncio.wait_for(
@@ -183,8 +187,15 @@ client_id = "test_node"
                 )
             except asyncio.TimeoutError:
                 console.print("[red]Force killing server process...[/red]")
-                self.process.kill()
-                await asyncio.get_event_loop().run_in_executor(None, self.process.wait)
+                try:
+                    self.process.kill()
+                    await asyncio.get_event_loop().run_in_executor(None, self.process.wait)
+                except ProcessLookupError:
+                    # Process already gone
+                    pass
+            except ProcessLookupError:
+                # Process already gone during wait
+                pass
             
             self.process = None
         
@@ -269,14 +280,43 @@ client_id = "test_node"
         """Stop the server process."""
         if self.process:
             console.print("[red]Stopping MerkleKV server...[/red]")
-            self.process.terminate()
+            try:
+                # Check if this is an asyncio.subprocess.Process
+                if hasattr(self.process, '_transport'):
+                    # This is an asyncio process, we shouldn't call terminate() directly
+                    # in synchronous context, so we handle the ProcessLookupError
+                    try:
+                        self.process.terminate()
+                    except ProcessLookupError:
+                        # Process already terminated
+                        pass
+                else:
+                    # Regular subprocess.Popen
+                    self.process.terminate()
+            except ProcessLookupError:
+                # Process already terminated
+                pass
+            except AttributeError:
+                # Might be an asyncio process, handle gracefully
+                pass
             
             try:
-                self.process.wait(timeout=5)
+                if hasattr(self.process, 'wait') and not hasattr(self.process, '_transport'):
+                    # Regular subprocess
+                    self.process.wait(timeout=5)
+                # For asyncio processes, we can't wait synchronously here
             except subprocess.TimeoutExpired:
                 console.print("[red]Force killing server process...[/red]")
-                self.process.kill()
-                self.process.wait()
+                try:
+                    self.process.kill()
+                    if hasattr(self.process, 'wait') and not hasattr(self.process, '_transport'):
+                        self.process.wait()
+                except (ProcessLookupError, AttributeError):
+                    # Process already gone or wrong type
+                    pass
+            except (AttributeError, ProcessLookupError):
+                # asyncio process or already gone, skip synchronous wait
+                pass
             
             self.process = None
 
@@ -432,7 +472,13 @@ class NodeHandle:
             except:
                 pass  # Ignore errors during shutdown command
             
-            await self.server.stop()
+            # Check if the server has an async stop method
+            stop_method = self.server.stop()
+            if asyncio.iscoroutine(stop_method):
+                await stop_method
+            else:
+                # It's a synchronous method that returned None
+                pass
 
 
 class ReplicationTestHarness:
