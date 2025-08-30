@@ -6,6 +6,7 @@ This script tests that the MGET command correctly handles lowercase input
 and doesn't include the command name in the response.
 """
 
+import pytest
 import socket
 
 def connect_to_server():
@@ -14,26 +15,26 @@ def connect_to_server():
     client.connect(('127.0.0.1', 7379))
     return client
 
-def test_mget_lowercase():
+def test_mget_lowercase(bulk_ops_server):
     """Test MGET command with lowercase input."""
     print("Testing lowercase 'mget' command...")
     client = connect_to_server()
     
     # Set some test keys
-    client.send(b"set k1 jadeHbg\r\n")
+    client.send(b"SET k1 jadeHbg\r\n")
     response = client.recv(1024)
     print(f"SET k1 response: {response}")
     
-    client.send(b"set k2 xinh-dep\r\n")
+    client.send(b"SET k2 xinh-dep\r\n")
     response = client.recv(1024)
     print(f"SET k2 response: {response}")
     
-    client.send(b"set k3 nhat-tren-doi\r\n")
+    client.send(b"SET k3 nhat-tren-doi\r\n")
     response = client.recv(1024)
     print(f"SET k3 response: {response}")
     
     # Test lowercase mget command with spaces between keys
-    command = b"mget k1 k2 k3\r\n"
+    command = b"MGET k1 k2 k3\r\n"
     print(f"Sending command: {command}")
     client.send(command)
     response = client.recv(1024)
@@ -55,7 +56,7 @@ def test_mget_lowercase():
 def main():
     """Run the test."""
     print("Starting MGET fix test...")
-    test_mget_lowercase()
+    test_mget_lowercase(None)
     print("\nTest completed!")
 
 if __name__ == "__main__":

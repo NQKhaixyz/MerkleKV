@@ -6,8 +6,11 @@ This script tests the bulk operations functionality:
 - MGET - Get multiple keys in one command
 - MSET - Set multiple key-value pairs
 - TRUNCATE - Clear all keys/values in the store
+
+The tests automatically start a MerkleKV server via the bulk_ops_server fixture.
 """
 
+import pytest
 import socket
 import time
 
@@ -17,7 +20,7 @@ def connect_to_server():
     client.connect(('127.0.0.1', 7379))
     return client
 
-def test_mset():
+def test_mset(bulk_ops_server):
     """Test MSET command."""
     print("Testing MSET...")
     client = connect_to_server()
@@ -42,7 +45,7 @@ def test_mset():
     
     client.close()
 
-def test_mget():
+def test_mget(bulk_ops_server):
     """Test MGET command."""
     print("\nTesting MGET...")
     client = connect_to_server()
@@ -54,7 +57,7 @@ def test_mget():
     
     client.close()
 
-def test_truncate():
+def test_truncate(bulk_ops_server):
     """Test TRUNCATE command."""
     print("\nTesting TRUNCATE...")
     client = connect_to_server()
@@ -76,9 +79,9 @@ def main():
     print("Starting manual bulk operations tests...")
     
     # Run tests
-    test_mset()
-    test_mget()
-    test_truncate()
+    test_mset(None)
+    test_mget(None)
+    test_truncate(None)
     
     print("\nAll tests completed!")
 

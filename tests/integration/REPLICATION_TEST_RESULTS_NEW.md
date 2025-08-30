@@ -2,30 +2,6 @@
 
 This is the test suite for verifying MerkleKV's real-time replication functionality using MQTT message transport.
 
-## Updated Results (2025-08-30)
-
-**Adversarial Test Battery Summary:**
-- **Ordering & Consistency**: 6 tests covering out-of-order delivery, duplicate burst handling, LWW resolution
-- **Clock Skew Simulation**: 6 tests covering ±60s producer time drift, equal timestamp boundary cases
-- **Broker Outage & Recovery**: 5 tests (marked `slow`) covering network partition healing, connection retry behavior
-- **Malformed Payloads**: 2 tests covering CBOR corruption, invalid structure resilience
-
-**Sample Commands:**
-```bash
-# Run adversarial test categories
-python run_tests.py --mode chaos                    # Full adversarial battery
-pytest -v test_replication_ordering.py              # Ordering scenarios
-pytest -v test_replication_clock_skew.py            # Clock drift scenarios
-pytest -v -m "slow" test_replication_broker_outage.py  # Network partition tests
-```
-
-**Sample Log Output:**
-```
-2025-08-30 15:42:33 [INFO] publish_set: key=user:alice, publishing to MQTT topic
-2025-08-30 15:42:35 [INFO] applied remote change: SET user:alice from node_2
-2025-08-30 15:42:35 [INFO] replication success: 2.1s latency
-```
-
 ## 🔍 Replication Compliance Audit (August 30, 2025)
 
 **Status: ✅ FULLY COMPLIANT** - All documented requirements verified and extensive adversarial testing added.

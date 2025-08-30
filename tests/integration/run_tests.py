@@ -3,13 +3,13 @@
 MerkleKV Integration Test Runner
 
 This script provides a comprehensive test runner for the MerkleKV integration tests
-with different modes for development, CI/CD, and performance testing.
+with different modes for development, CI/CD, replication, and adversarial testing.
 
 Usage:
     python run_tests.py [options]
 
 Options:
-    --mode MODE           Test mode: basic, concurrency, benchmark, all, ci
+    --mode MODE           Test mode: quick, basic, replication, chaos, benchmark, all, ci
     --host HOST           Server host (default: 127.0.0.1)
     --port PORT           Server port (default: 7379)
     --workers N           Number of parallel workers (default: auto)
@@ -17,6 +17,15 @@ Options:
     --report              Generate detailed report
     --benchmark-only      Run only benchmark tests
     --help                Show this help message
+
+Test Modes:
+    quick                 Fast tests for CI (< 2 minutes)
+    basic                 Basic functionality tests  
+    replication           All replication tests except slow ones (< 5 minutes)
+    chaos                 Full adversarial test battery including slow tests (< 15 minutes)
+    benchmark             Performance benchmarks
+    all                   All tests including benchmarks
+    ci                    CI/CD optimized test suite
 """
 
 import argparse
@@ -70,38 +79,68 @@ class TestRunner:
         ]
         
         # Add mode-specific arguments
-        if self.args.mode == "basic":
+        if self.args.mode == "quick":
+            # Fast tests only - suitable for PR checks (< 2 minutes)
             args.extend([
-                "-k", "TestBasicOperations or TestDataPersistence",
+                "-k", "TestBasicOperations or test_simple_server or test_mqtt_broker_connectivity",
+                "-m", "not slow and not benchmark",
+                "--maxfail=3"  # Stop after 3 failures for speed
+            ])
+            
+        elif self.args.mode == "basic":
+            # Basic functionality tests
+            args.extend([
+                "-k", "TestBasicOperations or TestDataPersistence or TestErrorHandling",
                 "-m", "not benchmark and not slow"
             ])
+            
+        elif self.args.mode == "replication":
+            # All replication tests except slow ones (< 5 minutes)
+            args.extend([
+                "-k", "replication",
+                "-m", "not slow and not benchmark"
+            ])
+            
+        elif self.args.mode == "chaos":
+            # Full adversarial test battery including slow tests (< 15 minutes)
+            args.extend([
+                "-k", "replication_ordering or replication_clock_skew or replication_broker_outage or replication_malformed_payloads",
+                "-m", "not benchmark"  # Include slow tests
+            ])
+            
         elif self.args.mode == "concurrency":
             args.extend([
                 "-k", "TestConcurrency",
                 "-m", "not benchmark"
             ])
+            
         elif self.args.mode == "benchmark":
             args.extend([
-                "-k", "TestBenchmarks or TestPerformanceBenchmarks",
+                "-k", "TestBenchmarks or TestPerformanceBenchmarks or replication_throughput",
                 "-m", "benchmark"
             ])
+            
         elif self.args.mode == "error":
             args.extend([
                 "-k", "TestErrorHandling or TestRecoveryScenarios",
                 "-m", "not benchmark"
             ])
+            
         elif self.args.mode == "ci":
+            # CI/CD optimized - quick but comprehensive
             args.extend([
                 "-m", "not benchmark and not slow",
                 "--junitxml=test-results.xml",
                 "--cov=src",
-                "--cov-report=xml",
-                "--cov-report=html"
+                "--cov-report=xml", 
+                "--cov-report=html",
+                "--maxfail=5"
             ])
+            
         elif self.args.mode == "all":
-            # Run all tests except benchmarks
+            # Run all tests including benchmarks and slow tests
             args.extend([
-                "-m", "not benchmark"
+                # No filters - run everything
             ])
         
         # Add benchmark-only mode
@@ -110,7 +149,7 @@ class TestRunner:
                 str(self.test_dir),
                 "-v",
                 "--tb=short",
-                "-k", "TestBenchmarks or TestPerformanceBenchmarks",
+                "-k", "TestBenchmarks or TestPerformanceBenchmarks or replication_throughput",
                 "-m", "benchmark"
             ]
         
@@ -199,20 +238,22 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run_tests.py --mode basic                    # Run basic tests only
-  python run_tests.py --mode concurrency             # Run concurrency tests
-  python run_tests.py --mode benchmark --verbose     # Run benchmarks with verbose output
-  python run_tests.py --mode ci                      # Run CI/CD tests
-  python run_tests.py --mode all --workers 4         # Run all tests with 4 workers
-  python run_tests.py --benchmark-only               # Run only benchmark tests
+  python run_tests.py --mode quick                    # Fast tests for CI (< 2 min)
+  python run_tests.py --mode basic                    # Basic functionality tests
+  python run_tests.py --mode replication              # All replication tests (< 5 min)
+  python run_tests.py --mode chaos                    # Full adversarial battery (< 15 min)
+  python run_tests.py --mode benchmark --verbose      # Performance benchmarks with verbose output
+  python run_tests.py --mode ci                       # CI/CD optimized tests
+  python run_tests.py --mode all --workers 4          # All tests with 4 workers
+  python run_tests.py --benchmark-only                # Run only benchmark tests
         """
     )
     
     parser.add_argument(
         "--mode",
-        choices=["basic", "concurrency", "benchmark", "error", "ci", "all"],
-        default="basic",
-        help="Test mode to run (default: basic)"
+        choices=["quick", "basic", "replication", "chaos", "concurrency", "benchmark", "error", "ci", "all"],
+        default="quick",
+        help="Test mode to run (default: quick)"
     )
     
     parser.add_argument(

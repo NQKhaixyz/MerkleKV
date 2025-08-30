@@ -202,36 +202,61 @@ mod tests {
     /// networked subscriber, but runs on a plain HashMap to keep tests simple.
     struct LocalApplier {
         seen: HashSet<[u8; 16]>,
-        last_ts: HashMap<String, u64>,
+        // Track last-seen version per key as (timestamp, op_id).
+        // Bugfix: storing only a timestamp causes ties (same ts) to be resolved
+        // by arrival order. We include op_id so we can tie-break deterministically.
+        last_ver: HashMap<String, (u64, [u8; 16])>,
         store: HashMap<String, String>,
     }
 
     impl LocalApplier {
         fn new() -> Self {
-            Self { seen: HashSet::new(), last_ts: HashMap::new(), store: HashMap::new() }
+            // Do NOT pre-populate any keys; tests drive all state via events.
+            Self { seen: HashSet::new(), last_ver: HashMap::new(), store: HashMap::new() }
         }
 
         /// Apply a change using idempotency and LWW semantics.
         fn apply(&mut self, ev: &ChangeEvent) {
+            // Idempotency: drop exact duplicate deliveries by op_id.
+            // Note: This is global. If different keys reused the same op_id,
+            // they'd dedupe across keys, which is uncommon and not done in our tests.
             if self.seen.contains(&ev.op_id) {
-                return; // idempotent: ignore duplicates
+                return;
             }
-            let ts_entry = self.last_ts.get(&ev.key).cloned().unwrap_or(0);
-            if ev.ts < ts_entry {
-                return; // LWW: ignore older events
+
+            // Per-key version check with LWW + tie-break by op_id.
+            // We only accept the event if it is strictly newer by timestamp,
+            // or if timestamps equal and op_id is lexicographically larger.
+            let accept = match self.last_ver.get(&ev.key) {
+                None => true,
+                Some((cur_ts, cur_id)) => {
+                    ev.ts > *cur_ts || (ev.ts == *cur_ts && ev.op_id > *cur_id)
+                }
+            };
+            if !accept {
+                return; // Older or losing-tie event is ignored per LWW.
             }
+
+            // Apply the mutation. For non-DEL ops, only apply when a value is present.
             match ev.op {
                 OpKind::Del => {
                     self.store.remove(&ev.key);
                 }
                 _ => {
                     if let Some(bytes) = &ev.val {
-                        let s = String::from_utf8(bytes.clone()).unwrap_or_else(|_| base64::encode(bytes));
+                        // Store UTF-8 as-is; if not UTF-8, fall back to base64 for safety.
+                        let s = String::from_utf8(bytes.clone())
+                            .unwrap_or_else(|_| base64::encode(bytes));
                         self.store.insert(ev.key.clone(), s);
+                    } else {
+                        // Missing value for a write-like op is ignored to avoid writing junk.
+                        return;
                     }
                 }
             }
-            self.last_ts.insert(ev.key.clone(), ev.ts);
+
+            // Update per-key last-seen version and mark op_id as seen.
+            self.last_ver.insert(ev.key.clone(), (ev.ts, ev.op_id));
             self.seen.insert(ev.op_id);
         }
     }
@@ -347,7 +372,14 @@ fn same_timestamp_tie_break_by_op_id() {
 #[test]
 fn per_key_ts_isolation() {
     let mut a = LocalApplier::new();
-    // If applied incorrectly, the timestamp of y could accidentally block x
+    // The sequence below ensures per-key isolation:
+    // - Write x@ts=1 -> "1"
+    // - Write y@ts=100 -> "9" (a much newer timestamp on a different key)
+    // - Write x@ts=2 -> "2" (newer than x@1, but older than y@100)
+    // If we accidentally tracked a single global last_ts, y@100 would block x@2.
+    a.apply(&sample_event(OpKind::Set, "x", Some("1"), 1));
+    a.apply(&sample_event(OpKind::Set, "y", Some("9"), 100));
+    a.apply(&sample_event(OpKind::Set, "x", Some("2"), 2));
     assert_eq!(a.store.get("x").cloned(), Some("2".into()));
     assert_eq!(a.store.get("y").cloned(), Some("9".into()));
 }

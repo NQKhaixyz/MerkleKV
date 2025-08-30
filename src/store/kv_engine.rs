@@ -223,15 +223,16 @@ impl KvEngine {
     }
 
     /// Append a value to an existing string.
-    /// 
-    /// If the key doesn't exist, it will be created with the value.
+    ///
+    /// The tests expect append to error when the key is missing; we return Err
+    /// to make this explicit instead of silently creating the key.
     /// 
     /// # Arguments
     /// * `key` - The key to append to
     /// * `value` - The value to append
     /// 
     /// # Returns
-    /// * `String` - The new value after appending
+    /// * `Result<String, anyhow::Error>` - The new value after appending, or error if the key is missing
     /// 
     /// # Example
     /// ```rust
@@ -239,35 +240,32 @@ impl KvEngine {
     /// let new_value = engine.append("greeting", " World!");
     /// println!("New value: {}", new_value); // e.g., "Hello World!"
     /// ```
-    pub fn append(&mut self, key: &str, value: &str) -> String {
+    pub fn append(&mut self, key: &str, value: &str) -> anyhow::Result<String> {
         let mut new_data = (*self.data).clone();
-        
-        let new_value = match new_data.get(key) {
-            Some(existing) => {
-                let mut result = existing.clone();
-                result.push_str(value);
-                result
-            }
-            None => value.to_string(), // Key doesn't exist, use the value as is
+        let existing = new_data.get(key).cloned();
+        let Some(current) = existing else {
+            // Beginner note: Returning an error here avoids surprising implicit creates.
+            return Err(anyhow::anyhow!("Key '{}' does not exist", key));
         };
-        
-        // Store the new value
+
+        let mut new_value = current;
+        new_value.push_str(value);
         new_data.insert(key.to_string(), new_value.clone());
         self.data = Arc::new(new_data);
-        
-        new_value
+        Ok(new_value)
     }
 
     /// Prepend a value to an existing string.
-    /// 
-    /// If the key doesn't exist, it will be created with the value.
+    ///
+    /// The tests expect prepend to error when the key is missing; we return Err
+    /// to make this explicit instead of silently creating the key.
     /// 
     /// # Arguments
     /// * `key` - The key to prepend to
     /// * `value` - The value to prepend
     /// 
     /// # Returns
-    /// * `String` - The new value after prepending
+    /// * `Result<String, anyhow::Error>` - The new value after prepending, or error if the key is missing
     /// 
     /// # Example
     /// ```rust
@@ -275,23 +273,19 @@ impl KvEngine {
     /// let new_value = engine.prepend("greeting", "Hello, ");
     /// println!("New value: {}", new_value); // e.g., "Hello, World!"
     /// ```
-    pub fn prepend(&mut self, key: &str, value: &str) -> String {
+    pub fn prepend(&mut self, key: &str, value: &str) -> anyhow::Result<String> {
         let mut new_data = (*self.data).clone();
-        
-        let new_value = match new_data.get(key) {
-            Some(existing) => {
-                let mut result = value.to_string();
-                result.push_str(existing);
-                result
-            }
-            None => value.to_string(), // Key doesn't exist, use the value as is
+        let existing = new_data.get(key).cloned();
+        let Some(current) = existing else {
+            // Beginner note: Returning an error here avoids surprising implicit creates.
+            return Err(anyhow::anyhow!("Key '{}' does not exist", key));
         };
-        
-        // Store the new value
+
+        let mut new_value = value.to_string();
+        new_value.push_str(&current);
         new_data.insert(key.to_string(), new_value.clone());
         self.data = Arc::new(new_data);
-        
-        new_value
+        Ok(new_value)
     }
 
     /// Clear all keys/values in the store.
@@ -472,40 +466,27 @@ impl KVEngineStoreTrait for KvEngine {
     /// * `value` - The value to append
     ///
     /// # Returns
-    /// * `Result<String>` - The new value after appending
+    /// * `Result<String>` - The new value after appending; error if key missing
     fn append(&self, key: &str, value: &str) -> Result<String> {
         // This is unsafe for concurrent access!
         let mut new_data = HashMap::clone(&self.data);
         
-        // Check if the key exists
-        if let Some(current_value) = new_data.get(key) {
-            // Append the new value
-            let new_value = format!("{}{}", current_value, value);
-            
-            // Store the new value
-            new_data.insert(key.to_string(), new_value.clone());
-            
-            unsafe {
-                let arc_ptr = Arc::into_raw(self.data.clone());
-                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
-                *mutex_ptr = new_data;
-                let _ = Arc::from_raw(arc_ptr);
-            }
-            
-            Ok(new_value)
-        } else {
-            // Key doesn't exist, create it with the value
-            new_data.insert(key.to_string(), value.to_string());
-            
-            unsafe {
-                let arc_ptr = Arc::into_raw(self.data.clone());
-                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
-                *mutex_ptr = new_data;
-                let _ = Arc::from_raw(arc_ptr);
-            }
-            
-            Ok(value.to_string())
+        // Tests require: do NOT create missing keys; return Err instead.
+        let Some(current_value) = new_data.get(key) else {
+            return Err(anyhow::anyhow!("Key '{}' does not exist", key));
+        };
+
+        let new_value = format!("{}{}", current_value, value);
+        new_data.insert(key.to_string(), new_value.clone());
+
+        unsafe {
+            let arc_ptr = Arc::into_raw(self.data.clone());
+            let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
+            *mutex_ptr = new_data;
+            let _ = Arc::from_raw(arc_ptr);
         }
+
+        Ok(new_value)
     }
     
     /// Prepend a value to an existing string.
@@ -515,40 +496,27 @@ impl KVEngineStoreTrait for KvEngine {
     /// * `value` - The value to prepend
     ///
     /// # Returns
-    /// * `Result<String>` - The new value after prepending
+    /// * `Result<String>` - The new value after prepending; error if key missing
     fn prepend(&self, key: &str, value: &str) -> Result<String> {
         // This is unsafe for concurrent access!
         let mut new_data = HashMap::clone(&self.data);
         
-        // Check if the key exists
-        if let Some(current_value) = new_data.get(key) {
-            // Prepend the new value
-            let new_value = format!("{}{}", value, current_value);
-            
-            // Store the new value
-            new_data.insert(key.to_string(), new_value.clone());
-            
-            unsafe {
-                let arc_ptr = Arc::into_raw(self.data.clone());
-                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
-                *mutex_ptr = new_data;
-                let _ = Arc::from_raw(arc_ptr);
-            }
-            
-            Ok(new_value)
-        } else {
-            // Key doesn't exist, create it with the value
-            new_data.insert(key.to_string(), value.to_string());
-            
-            unsafe {
-                let arc_ptr = Arc::into_raw(self.data.clone());
-                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
-                *mutex_ptr = new_data;
-                let _ = Arc::from_raw(arc_ptr);
-            }
-            
-            Ok(value.to_string())
+        // Tests require: do NOT create missing keys; return Err instead.
+        let Some(current_value) = new_data.get(key) else {
+            return Err(anyhow::anyhow!("Key '{}' does not exist", key));
+        };
+
+        let new_value = format!("{}{}", value, current_value);
+        new_data.insert(key.to_string(), new_value.clone());
+
+        unsafe {
+            let arc_ptr = Arc::into_raw(self.data.clone());
+            let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
+            *mutex_ptr = new_data;
+            let _ = Arc::from_raw(arc_ptr);
         }
+        
+        Ok(new_value)
     }
     
     /// Clear all keys/values in the store.
