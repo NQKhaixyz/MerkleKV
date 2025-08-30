@@ -25,8 +25,10 @@ pub mod kv_engine;
 pub mod kv_trait;
 pub mod merkle;
 pub mod rwlock_engine;
+pub mod sled_engine;
 
 // Re-export the trait and engines for convenience
 pub use kv_engine::KvEngine;
 pub use kv_trait::KVEngineStoreTrait;
 pub use rwlock_engine::RwLockEngine;
+pub use sled_engine::SledEngine;

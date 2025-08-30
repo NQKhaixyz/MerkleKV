@@ -46,6 +46,7 @@ pub struct Config {
     /// Storage engine type to use ("rwlock" or "kv")
     /// - "rwlock": Thread-safe implementation using RwLock<HashMap>
     /// - "kv": Non-thread-safe implementation using Arc<HashMap>
+    /// - "sled": Persistent storage using sled embedded database
     pub engine: String,
 
     /// Configuration for MQTT-based replication between nodes
@@ -117,7 +118,7 @@ impl Config {
             host: "127.0.0.1".to_string(),
             port: 7379,
             storage_path: "data".to_string(),
-            engine: "rwlock".to_string(),
+            engine: "sled".to_string(),
             replication: ReplicationConfig {
                 enabled: false,
                 mqtt_broker: "localhost".to_string(),

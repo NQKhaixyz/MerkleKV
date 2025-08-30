@@ -36,7 +36,7 @@ mod sync; // Anti-entropy synchronization (stub)
 mod change_event; // Change event schema & codecs
 
 // Import storage engines
-use crate::store::{KVEngineStoreTrait, KvEngine, RwLockEngine};
+use crate::store::{KVEngineStoreTrait, KvEngine, RwLockEngine, SledEngine};
 
 /// Main entry point for the MerkleKV server.
 ///
@@ -133,9 +133,13 @@ fn main() -> Result<()> {
                 println!("   Only use this for single-threaded applications or testing.");
                 Box::new(KvEngine::new(&config.storage_path)?)
             }
+            "sled" => {
+                println!("Using persistent SledEngine");
+                Box::new(SledEngine::new(&config.storage_path)?)
+            }
             _ => {
                 eprintln!("Error: Unknown engine type '{}'", config.engine);
-                eprintln!("Available engines: rwlock, kv");
+                eprintln!("Available engines: rwlock, kv, sled");
                 std::process::exit(1);
             }
         };

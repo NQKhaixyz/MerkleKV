@@ -9,165 +9,18 @@ Test Setup:
 - Uses public MQTT broker: test.mosquitto.org:1883
 - Creates multiple MerkleKV server instances
 - Verifies that write operations on one node are replicated to others
-- Tests various operations: SET, DELETE, INCR, DECR, APPEND, PREPEND
+- Tests various operations: SET, DELETE, INC, DEC, APPEND, PREPEND
 """
 
 import asyncio
 import json
 import pytest
-import pytest_asyncio
-import socket
-import subprocess
-import tempfile
 import time
 import uuid
-from pathlib import Path
-from typing import List, Dict, Any
-import toml
 import threading
 import paho.mqtt.client as mqtt
-import base64
 
-from conftest import MerkleKVServer
-
-@pytest.fixture
-def unique_topic_prefix():
-    """Generate a unique topic prefix for each test to avoid interference."""
-    return f"test_merkle_kv_{uuid.uuid4().hex[:8]}"
-
-@pytest.fixture
-def mqtt_config(unique_topic_prefix):
-    """MQTT configuration using public test broker."""
-    return {
-        "enabled": True,
-        "mqtt_broker": "test.mosquitto.org",
-        "mqtt_port": 1883,
-        "topic_prefix": unique_topic_prefix,
-        "client_id": f"test_client_{uuid.uuid4().hex[:8]}"
-    }
-
-async def create_replication_config(port: int, node_id: str, topic_prefix: str) -> Path:
-    """Create a temporary config file with replication enabled."""
-    config = {
-        "host": "127.0.0.1",
-        "port": port,
-        "storage_path": f"data_test_{node_id}",
-        "engine": "rwlock",
-        "sync_interval_seconds": 60,
-        "replication": {
-            "enabled": True,
-            "mqtt_broker": "test.mosquitto.org",
-            "mqtt_port": 1883,
-            "topic_prefix": topic_prefix,
-            "client_id": node_id
-        }
-    }
-    
-    # Create temporary config file
-    temp_config = Path(f"/tmp/config_{node_id}.toml")
-    with open(temp_config, 'w') as f:
-        toml.dump(config, f)
-    
-    return temp_config
-
-class ReplicationTestSetup:
-    """Helper class to manage multiple MerkleKV instances for replication testing.
-    
-    This class is deprecated and kept for compatibility only.
-    Use the replication_setup fixture with ReplicationTestHarness instead.
-    """
-    
-    def __init__(self, topic_prefix: str = None):
-        import uuid
-        self.topic_prefix = topic_prefix or f"test_merkle_kv_{uuid.uuid4().hex[:8]}"
-        self.servers: List[MerkleKVServer] = []
-        self.configs: List[Path] = []
-        
-    async def create_node(self, node_id: str, port: int) -> MerkleKVServer:
-        """Create and start a MerkleKV node with replication enabled.
-        
-        Deprecated: Use ReplicationTestHarness.create_node() instead.
-        """
-        config_path = await create_replication_config(port, node_id, self.topic_prefix)
-        self.configs.append(config_path)
-        
-        server = MerkleKVServer(host="127.0.0.1", port=port, config_path=str(config_path))
-        
-        # Start the server process
-        project_root = Path.cwd()
-        if "tests" in str(project_root):
-            project_root = project_root.parent.parent
-        
-        cmd = ["cargo", "run", "--quiet", "--", "--config", str(config_path)]
-        
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=project_root,
-            env={**os.environ, "RUST_LOG": "info"}
-        )
-        
-        server.process = process
-        
-        # Wait for server to be ready
-        start_time = time.time()
-        while time.time() - start_time < 30:
-            if process.returncode is not None:
-                stdout, stderr = await process.communicate()
-                raise RuntimeError(f"Server failed to start: {stderr.decode()}")
-            
-            try:
-                with socket.create_connection(("127.0.0.1", port), timeout=1):
-                    break
-            except (socket.timeout, ConnectionRefusedError):
-                await asyncio.sleep(0.1)
-        else:
-            process.terminate()
-            raise TimeoutError("Server failed to start")
-        
-        self.servers.append(server)
-        
-        # Wait for MQTT connection to establish
-        await asyncio.sleep(2)
-        
-        return server
-        
-    async def cleanup(self):
-        """Stop all servers and clean up temporary files."""
-        for server in self.servers:
-            if hasattr(server, 'process') and server.process:
-                try:
-                    # Try graceful shutdown
-                    with socket.create_connection(("127.0.0.1", server.port), timeout=1) as sock:
-                        sock.send(b"SHUTDOWN\r\n")
-                    await asyncio.sleep(1)
-                except:
-                    pass
-                
-                if server.process.returncode is None:
-                    server.process.terminate()
-                    try:
-                        await asyncio.wait_for(server.process.wait(), timeout=5)
-                    except asyncio.TimeoutError:
-                        server.process.kill()
-                        await server.process.wait()
-        
-        for config_path in self.configs:
-            if config_path.exists():
-                config_path.unlink()
-
-@pytest_asyncio.fixture
-async def replication_setup(unique_topic_prefix):
-    """Setup for replication tests with cleanup.
-    
-    This fixture provides the new ReplicationTestHarness for better
-    node management and cleaner teardown.
-    """
-    from conftest import ReplicationTestHarness
-    setup = ReplicationTestHarness(unique_topic_prefix)
-    yield setup
-    await setup.shutdown()
+# Note: replication_setup fixture is provided by tests/integration/conftest.py
 
 class MQTTTestClient:
     """Test client to monitor MQTT messages."""
@@ -223,83 +76,31 @@ class MQTTTestClient:
             print(f"MQTT monitoring error: {e}")
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
 async def test_basic_replication_setup(replication_setup):
     """Test that replication nodes can be created and connected."""
-    # Create two nodes
     node1 = await replication_setup.create_node("node1", 7380)
     node2 = await replication_setup.create_node("node2", 7381)
     
-    # Verify both nodes are running and responsive
-    response1 = await node1.send("SET test_key test_value")
-    assert response1 == "OK"
+    # Basic connectivity test on node1
+    res = await node1.send("SET test_key test_value")
+    assert res == "OK"
+    response = await node1.send("GET test_key")
+    assert response == "VALUE test_value"
     
-    response2 = await node1.send("GET test_key")
-    assert response2 == "VALUE test_value"
-    
-    # Test second node connectivity
-    response3 = await node2.send("SET test_key2 test_value2")
-    assert response3 == "OK"
+    # Node2 should also be responsive
+    res2 = await node2.send("SET test_key2 test_value2")
+    assert res2 == "OK"
 
 @pytest.mark.asyncio
-async def test_set_operation_replication(replication_setup, unique_topic_prefix):
+async def test_set_operation_replication(replication_setup):
     """Test that SET operations are replicated between nodes."""
     # Create two nodes
     node1 = await replication_setup.create_node("node1", 7382)
     node2 = await replication_setup.create_node("node2", 7383)
     
-    # Wait for MQTT connections to stabilize
-    await asyncio.sleep(3)
-    
-    # Set a value on node1
-    response = await node1.send("SET replicated_key replicated_value")
-    assert response == "OK"
-    
-    # Wait for replication
-    await asyncio.sleep(5)
-    
-    # Check if the value was replicated to node2 
-    response = await node2.send("GET replicated_key")
-    # Since MQTT replication may not work reliably in test environment, accept both outcomes
-    assert response in ["VALUE replicated_value", "NOT_FOUND"], f"Unexpected response: {response}"
-    
-    # Verify both nodes work independently
-    await node2.send("SET node2_key node2_value")
-    result = await node2.send("GET node2_key") 
-    assert result == "VALUE node2_value"
-
-@pytest.mark.asyncio
-async def test_delete_operation_replication(replication_setup, unique_topic_prefix):
-    """Test that DELETE operations are replicated between nodes."""
-    # Create two nodes
-    node1 = await replication_setup.create_node("node1", 7384)
-    node2 = await replication_setup.create_node("node2", 7385)
-    
-    # First set a value on both nodes (via replication)
-    await node1.send("SET delete_key delete_value")
-    await asyncio.sleep(3)  # Wait for replication
-    
-    # Verify key exists on both nodes
-    response1 = await node1.send("GET delete_key")
-    response2 = await node2.send("GET delete_key")
-    assert response1 == "VALUE delete_value"
-    # Note: might be "NOT_FOUND" if replication hasn't completed yet
-    
-    # Delete on node1
-    await node1.send("DELETE delete_key")
-    
-    # Wait for replication
-    await asyncio.sleep(5)
-    
-    # Check that key is deleted on node2
-    response = await node2.send("GET delete_key")
-    assert response == "NOT_FOUND"
-    
     # Start MQTT monitoring
-    mqtt_client = MQTTTestClient(unique_topic_prefix)
-    monitor_task = asyncio.create_task(
-        mqtt_client.monitor_replication_messages(10.0)
-    )
+    mqtt_client = MQTTTestClient(replication_setup.topic_prefix)
+    monitor_task = asyncio.create_task(mqtt_client.monitor_replication_messages(10.0))
     
     # Wait for MQTT connections to stabilize
     await asyncio.sleep(3)
@@ -315,8 +116,7 @@ async def test_delete_operation_replication(replication_setup, unique_topic_pref
     
     # Verify the value exists on node2
     result = await node2.send(f"GET {test_key}")
-    expected = f"VALUE {test_value}"
-    assert result == expected, f"Expected {expected}, got {result}"
+    assert result == f"VALUE {test_value}", f"Expected VALUE {test_value}, got {result}"
     
     # Stop monitoring and check messages
     monitor_task.cancel()
@@ -343,7 +143,7 @@ async def test_delete_operation_replication(replication_setup, unique_topic_pref
     print(f"Found {len(mqtt_client.received_messages)} MQTT messages")
 
 @pytest.mark.asyncio
-async def test_delete_operation_replication(replication_setup, unique_topic_prefix):
+async def test_delete_operation_replication(replication_setup):
     """Test that DELETE operations are replicated between nodes."""
     # Create two nodes
     node1 = await replication_setup.create_node("node1", 7384)
@@ -362,10 +162,10 @@ async def test_delete_operation_replication(replication_setup, unique_topic_pref
     result1 = await node1.send(f"GET {test_key}")
     result2 = await node2.send(f"GET {test_key}")
     assert result1 == "VALUE initial_value"
-    # Note: result2 might be NOT_FOUND if replication hasn't finished yet
+    assert result2 == "VALUE initial_value"
     
     # Delete from node1
-    await node1.send(f"DELETE {test_key}")  # Use DELETE instead of DEL
+    await node1.send(f"DEL {test_key}")
     
     # Wait for replication
     await asyncio.sleep(5)
@@ -394,24 +194,23 @@ async def test_numeric_operations_replication(replication_setup):
     result1 = await node1.send(f"GET {test_key}")
     result2 = await node2.send(f"GET {test_key}")
     assert result1 == "VALUE 10"
-    # Note: result2 might be NOT_FOUND if replication hasn't finished yet
+    assert result2 == "VALUE 10"
     
     # Increment on node1
-    await node1.send(f"INC {test_key}")  # Use INC instead of INCR
+    await node1.send(f"INCR {test_key}")
     await asyncio.sleep(3)
     
     # Verify increment replicated to node2
     result2 = await node2.send(f"GET {test_key}")
-    assert result2 in ["VALUE 11", "NOT_FOUND"], f"Expected VALUE 11 or NOT_FOUND, got {result2}"
+    assert result2 == "VALUE 11", f"Expected VALUE 11, got {result2}"
     
-    # Decrement on node2 (if the key exists)
-    await node2.send(f"DEC {test_key}")  # Use DEC instead of DECR
+    # Decrement on node2
+    await node2.send(f"DECR {test_key}")
     await asyncio.sleep(3)
     
     # Verify decrement replicated to node1
     result1 = await node1.send(f"GET {test_key}")
-    # The result depends on whether replication worked correctly
-    assert "VALUE" in result1 or result1 == "NOT_FOUND", f"Unexpected result: {result1}"
+    assert result1 == "VALUE 10", f"Expected VALUE 10, got {result1}"
 
 @pytest.mark.asyncio
 async def test_string_operations_replication(replication_setup):
@@ -433,7 +232,7 @@ async def test_string_operations_replication(replication_setup):
     result1 = await node1.send(f"GET {test_key}")
     result2 = await node2.send(f"GET {test_key}")
     assert result1 == "VALUE hello"
-    # Note: result2 might be NOT_FOUND if replication hasn't finished yet
+    assert result2 == "VALUE hello"
     
     # Append on node1
     await node1.send(f"APPEND {test_key} _world")
@@ -441,17 +240,15 @@ async def test_string_operations_replication(replication_setup):
     
     # Verify append replicated to node2
     result2 = await node2.send(f"GET {test_key}")
-    expected_values = ["VALUE hello_world", "NOT_FOUND"]
-    assert result2 in expected_values, f"Expected one of {expected_values}, got {result2}"
+    assert result2 == "VALUE hello_world", f"Expected VALUE hello_world, got {result2}"
     
-    # Prepend on node2 (if key exists)
+    # Prepend on node2
     await node2.send(f"PREPEND {test_key} say_")
     await asyncio.sleep(3)
     
     # Verify prepend replicated to node1
     result1 = await node1.send(f"GET {test_key}")
-    # Result depends on replication success
-    assert "VALUE" in result1 or result1 == "NOT_FOUND", f"Unexpected result: {result1}"
+    assert result1 == "VALUE say_hello_world", f"Expected VALUE say_hello_world, got {result1}"
 
 @pytest.mark.asyncio
 async def test_concurrent_operations_replication(replication_setup):
@@ -481,16 +278,13 @@ async def test_concurrent_operations_replication(replication_setup):
         result1 = await node.send("GET concurrent_test1")
         result2 = await node.send("GET concurrent_test2")
         result3 = await node.send("GET concurrent_test3")
-        
-        # Since replication might not be perfect, accept both success and miss
-        assert result1 in ["VALUE value1", "NOT_FOUND"], f"Unexpected result for test1: {result1}"
-        assert result2 in ["VALUE value2", "NOT_FOUND"], f"Unexpected result for test2: {result2}"
-        assert result3 in ["VALUE value3", "NOT_FOUND"], f"Unexpected result for test3: {result3}"
+        assert result1 == "VALUE value1", f"Node missing concurrent_test1: {result1}"
+        assert result2 == "VALUE value2", f"Node missing concurrent_test2: {result2}"
+        assert result3 == "VALUE value3", f"Node missing concurrent_test3: {result3}"
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
 async def test_replication_with_node_restart(replication_setup):
-    """Test basic replication setup with simple restart simulation."""
+    """Test replication behavior when a node is restarted."""
     # Create two nodes
     node1 = await replication_setup.create_node("node1", 7393)
     node2 = await replication_setup.create_node("node2", 7394)
@@ -499,42 +293,74 @@ async def test_replication_with_node_restart(replication_setup):
     await asyncio.sleep(3)
     
     # Set some initial data
-    await node1.send("SET restart_test1 test_value")
+    await node1.send("SET restart_test1 before_restart")
     await asyncio.sleep(2)
     
-    # Verify basic connectivity (don't assume replication works)
-    result1 = await node1.send("GET restart_test1") 
-    assert result1 == "VALUE test_value"
+    # Verify replication
+    result = await node2.send("GET restart_test1")
+    assert result == "VALUE before_restart"
     
-    # Test that both nodes are independently functional
-    await node2.send("SET restart_test2 node2_value")
-    result2 = await node2.send("GET restart_test2")
-    assert result2 == "VALUE node2_value"
+    # Stop node2
+    await node2.stop()
+    
+    # Add more data while node2 is down
+    await node1.send("SET restart_test2 during_downtime")
+    await asyncio.sleep(2)
+    
+    # Restart node2 (simulate restart)
+    node2_restarted = await replication_setup.create_node("node2_restart", 7395)
+    await asyncio.sleep(5)
+    
+    # Add data after restart
+    await node1.send("SET restart_test3 after_restart")
+    await asyncio.sleep(5)
+    
+    # Verify new data is replicated to restarted node
+    result = await node2_restarted.send("GET restart_test3")
+    assert result == "VALUE after_restart"
+    
+    # Note: Data during downtime might not be replicated since MQTT 
+    # doesn't persist messages for disconnected clients by default
 
 @pytest.mark.asyncio
-async def test_replication_loop_prevention(replication_setup, unique_topic_prefix):
-    """Test basic replication setup without infinite loops."""
+async def test_replication_loop_prevention(replication_setup):
+    """Test that nodes don't create infinite loops by processing their own messages."""
     # Create a single node
     node1 = await replication_setup.create_node("node1", 7396)
+    
+    # Start MQTT monitoring
+    mqtt_client = MQTTTestClient(replication_setup.topic_prefix)
+    monitor_task = asyncio.create_task(
+        mqtt_client.monitor_replication_messages(15.0)
+    )
     
     # Wait for MQTT connections to stabilize
     await asyncio.sleep(3)
     
-    # Perform a few basic operations
-    for i in range(3):
+    # Perform multiple operations rapidly
+    for i in range(5):
         await node1.send(f"SET loop_test_{i} value_{i}")
         await asyncio.sleep(0.5)
     
-    # Wait for operations to complete
-    await asyncio.sleep(2)
+    # Wait for all messages to be processed
+    await asyncio.sleep(5)
     
-    # Verify the operations completed successfully
-    for i in range(3):
-        result = await node1.send(f"GET loop_test_{i}")
-        assert result == f"VALUE value_{i}", f"Operation {i} failed: {result}"
+    # Stop monitoring
+    monitor_task.cancel()
+    try:
+        await monitor_task
+    except asyncio.CancelledError:
+        pass
+    
+    # Verify we don't have an excessive number of messages (indicating loops)
+    # We should have roughly 5 messages, not 50+ from loops
+    message_count = len(mqtt_client.received_messages)
+    assert message_count <= 20, f"Too many messages detected ({message_count}), possible loop"
+    
+    print(f"Received {message_count} MQTT messages for 5 operations")
 
 @pytest.mark.asyncio
-async def test_malformed_mqtt_message_handling(replication_setup, unique_topic_prefix):
+async def test_malformed_mqtt_message_handling(replication_setup):
     """Test that nodes handle malformed MQTT messages gracefully."""
     # Create a node
     node1 = await replication_setup.create_node("node1", 7397)
@@ -546,7 +372,7 @@ async def test_malformed_mqtt_message_handling(replication_setup, unique_topic_p
     try:
         def on_connect(client, userdata, flags, rc):
             if rc == 0:
-                topic = f"{unique_topic_prefix}/events"
+                topic = f"{replication_setup.topic_prefix}/events"
                 
                 # Send invalid JSON
                 client.publish(topic, "invalid json message")
@@ -565,12 +391,12 @@ async def test_malformed_mqtt_message_handling(replication_setup, unique_topic_p
         client.loop_stop()
         client.disconnect()
         
-        # Verify the node is still responsive
-        result = await node1.send("SET test_after_malformed success")
-        assert result == "OK"
-        
-        result = await node1.send("GET test_after_malformed")
-        assert result == "success"
+    # Verify the node is still responsive
+    result = await node1.send("SET test_after_malformed success")
+    assert result == "OK"
+
+    result = await node1.send("GET test_after_malformed")
+    assert result == "VALUE success"
         
     except Exception as e:
         print(f"MQTT client error (expected in some cases): {e}")

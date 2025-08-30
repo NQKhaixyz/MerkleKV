@@ -107,6 +107,43 @@ client_id = "test_node"
         # Wait for server to be ready
         self._wait_for_server()
 
+    async def start_async(self, temp_dir: Optional[Path] = None) -> None:
+        """Start the MerkleKV server process asynchronously."""
+        if self.custom_config_path:
+            # Use custom config file
+            self.config_file = Path(self.custom_config_path)
+        else:
+            # Create default config file
+            if temp_dir is None:
+                temp_dir = Path(tempfile.mkdtemp())
+            self.config_file = self.create_config(temp_dir)
+        
+        # Create storage directory if using default config
+        if not self.custom_config_path and temp_dir:
+            storage_dir = temp_dir / self.storage_path
+            storage_dir.mkdir(exist_ok=True)
+        
+        # Start the server process
+        cmd = ["cargo", "run", "--", "--config", str(self.config_file)]
+        console.print(f"[blue]Starting MerkleKV server: {' '.join(cmd)}[/blue]")
+        
+        # Get the project root directory (two levels up from tests/integration)
+        project_root = Path.cwd()
+        if "tests" in str(project_root):
+            # We're running from tests directory, go up to project root
+            project_root = project_root.parent.parent
+        
+        self.process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=project_root,  # Use project root
+            env={**os.environ, "RUST_LOG": "info"}
+        )
+        
+        # Wait for server to be ready asynchronously
+        await self._wait_for_server_async()
+
     async def execute_command(self, command: str) -> str:
         """Execute a command asynchronously and return the response."""
         reader, writer = await asyncio.open_connection(self.host, self.port)
@@ -186,6 +223,47 @@ client_id = "test_node"
                 self.process.wait()
         
         raise TimeoutError(f"Server failed to start within {SERVER_TIMEOUT} seconds")
+
+    async def _wait_for_server_async(self) -> None:
+        """Wait for the server to be ready to accept connections asynchronously."""
+        console.print("[yellow]Waiting for server to start...[/yellow]")
+        
+        start_time = time.time()
+        while time.time() - start_time < SERVER_TIMEOUT:
+            # Check if process is still running
+            if self.process.poll() is not None:
+                # Process has exited, check for errors
+                stdout, stderr = self.process.communicate()
+                error_msg = f"Server process exited with code {self.process.returncode}"
+                if stderr:
+                    error_msg += f"\nStderr: {stderr.decode()}"
+                if stdout:
+                    error_msg += f"\nStdout: {stdout.decode()}"
+                raise RuntimeError(error_msg)
+            
+            try:
+                reader, writer = await asyncio.open_connection(self.host, self.port)
+                writer.close()
+                await writer.wait_closed()
+                console.print("[green]Server is ready![/green]")
+                return
+            except (OSError, ConnectionRefusedError):
+                await asyncio.sleep(0.1)
+                continue
+        
+        # If we get here, server didn't start in time
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, self.process.wait),
+                    timeout=5
+                )
+            except asyncio.TimeoutError:
+                self.process.kill()
+                await asyncio.get_event_loop().run_in_executor(None, self.process.wait)
+        
+        raise TimeoutError(f"Server failed to start within {SERVER_TIMEOUT} seconds")
     
     def stop(self) -> None:
         """Stop the server process."""
@@ -228,8 +306,8 @@ class MerkleKVClient:
         # Send command
         self.socket.send(f"{command}\r\n".encode())
         
-        # Receive response
-        response = self.socket.recv(1024).decode().strip()
+        # Receive response - use larger buffer for large values
+        response = self.socket.recv(32768).decode().strip()
         return response
     
     def get(self, key: str) -> str:
@@ -692,18 +770,5 @@ def send_command(client, command: str) -> str:
     return response
 
 
-# Import ReplicationTestSetup
-import sys
-import os
-sys.path.append(os.path.dirname(__file__))
-from test_replication import ReplicationTestSetup
-
-
-@pytest.fixture
-async def replication_setup():
-    """Fixture to provide a ReplicationTestSetup instance for replication tests."""
-    setup = ReplicationTestSetup()
-    try:
-        yield setup
-    finally:
-        await setup.cleanup()
+# Note: ReplicationTestSetup has been moved to use simple functions in test_replication.py
+# The replication_setup fixture is no longer needed
