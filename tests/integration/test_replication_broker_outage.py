@@ -89,7 +89,7 @@ class TestReplicationBrokerOutage:
             outage_operations = [
                 ("SET", f"{key}_local1", "local_value_1"),
                 ("SET", f"{key}_local2", "local_value_2"), 
-                ("INCR", f"{key}_counter"),
+                ("INC", f"{key}_counter"),
                 ("SET", key, "during_outage"),
                 ("DELETE", f"{key}_local1"),
             ]
@@ -106,8 +106,8 @@ class TestReplicationBrokerOutage:
                 # Be flexible with responses during outage
                 if op_type == "DELETE":
                     assert response in ["OK", "NOT_FOUND"], f"DELETE during outage failed: {response}"
-                elif op_type == "INCR":
-                    assert response.startswith(("VALUE", "NOT_FOUND")), f"INCR during outage failed: {response}"
+                elif op_type == "INC":
+                    assert response.startswith(("VALUE", "NOT_FOUND")), f"INC during outage failed: {response}"
                 else:
                     assert response.startswith("OK"), f"{op_type} during outage failed: {response}"
                 

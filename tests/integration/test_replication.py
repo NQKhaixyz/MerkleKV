@@ -197,7 +197,7 @@ async def test_numeric_operations_replication(replication_setup):
     assert result2 == "VALUE 10"
     
     # Increment on node1
-    await node1.send(f"INCR {test_key}")
+    await node1.send(f"INC {test_key}")
     await asyncio.sleep(3)
     
     # Verify increment replicated to node2
@@ -205,7 +205,7 @@ async def test_numeric_operations_replication(replication_setup):
     assert result2 == "VALUE 11", f"Expected VALUE 11, got {result2}"
     
     # Decrement on node2
-    await node2.send(f"DECR {test_key}")
+    await node2.send(f"DEC {test_key}")
     await asyncio.sleep(3)
     
     # Verify decrement replicated to node1
