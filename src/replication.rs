@@ -38,7 +38,7 @@
 //! - Conflict resolution for concurrent writes
 
 use anyhow::Result;
-use log::{error, info, warn};
+use log::{error, warn};
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -354,17 +354,17 @@ impl Replicator {
                 if let Some(seq) = ev.seq {
                     let expected_seq = last_seq.get(&ev.src).cloned().unwrap_or(0) + 1;
                     if seq > expected_seq {
-                        warn!("🔧 EVENTUAL CONSISTENCY GAP DETECTED: Sequence gap from {}: expected {}, got {} (potential message loss)", 
+                        warn!("EVENTUAL CONSISTENCY GAP DETECTED: Sequence gap from {}: expected {}, got {} (potential message loss)", 
                               ev.src, expected_seq, seq);
-                        warn!("🔧 REPAIR REQUIRED: Anti-entropy mechanism needed for complete eventual consistency");
-                        warn!("🔧 CURRENT STATUS: Real-time MQTT replication only - rejoining nodes may miss historical updates");
+                        warn!("REPAIR REQUIRED: Anti-entropy mechanism needed for complete eventual consistency");
+                        warn!("CURRENT STATUS: Real-time MQTT replication only - rejoining nodes may miss historical updates");
                         // TODO: Trigger targeted anti-entropy repair for this publisher
                         // In production, this would initiate a Merkle comparison with ev.src
                     }
                     last_seq.insert(ev.src.clone(), seq.max(last_seq.get(&ev.src).cloned().unwrap_or(0)));
                 }
 
-                let mut guard = store.lock().await;
+                let guard = store.lock().await;
                 match ev.op {
                     OpKind::Del => {
                         guard.delete(&ev.key);

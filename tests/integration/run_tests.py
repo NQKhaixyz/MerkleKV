@@ -91,13 +91,24 @@ class TestRunner:
                 "-m", "not benchmark"
             ])
         elif self.args.mode == "ci":
+            # CI mode tests with junit output but graceful coverage fallback
+            # Invariant: CI tests must run deterministically without external dependencies
+            # Adversary: Missing pytest-cov plugin could break CI execution
+            # Oracle: Test execution proceeds with basic junit output as minimum viable CI integration
             args.extend([
                 "-m", "not benchmark and not slow",
-                "--junitxml=test-results.xml",
-                "--cov=src",
-                "--cov-report=xml",
-                "--cov-report=html"
+                "--junitxml=test-results.xml"
             ])
+            # Add coverage only if pytest-cov is available
+            try:
+                import pytest_cov
+                args.extend([
+                    "--cov=src",
+                    "--cov-report=xml", 
+                    "--cov-report=html"
+                ])
+            except ImportError:
+                console.print("[yellow]Warning: pytest-cov not available, running without coverage[/yellow]")
         elif self.args.mode == "all":
             # Run all tests except benchmarks
             args.extend([
