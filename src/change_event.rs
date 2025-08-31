@@ -19,6 +19,7 @@
 //! and makes LWW straightforward: the winner simply becomes “the value”.
 
 use serde::{Deserialize, Serialize};
+use base64::prelude::*;
 
 /// The operation kind carried by a change event.
 ///
@@ -252,7 +253,7 @@ mod tests {
                 }
                 _ => {
                     if let Some(bytes) = &ev.val {
-                        let s = String::from_utf8(bytes.clone()).unwrap_or_else(|_| base64::encode(bytes));
+                        let s = String::from_utf8(bytes.clone()).unwrap_or_else(|_| BASE64_STANDARD.encode(bytes));
                         self.store.insert(ev.key.clone(), s);
                     }
                 }
@@ -336,7 +337,7 @@ fn non_utf8_value_safe_handling() {
     applier.apply(&ev);
     // LocalApplier stringify non-UTF8 via base64 fallback
     let got = applier.store.get("bin").unwrap();
-    assert_eq!(got, &base64::encode(&bytes));
+    assert_eq!(got, &BASE64_STANDARD.encode(&bytes));
 }
 #[test]
 fn idempotency_burst_duplicates() {

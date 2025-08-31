@@ -38,6 +38,7 @@
 //! - Conflict resolution for concurrent writes
 
 use anyhow::Result;
+use base64::prelude::*;
 use log::{error, warn};
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
 use std::collections::{HashMap, HashSet};
@@ -373,7 +374,7 @@ impl Replicator {
                         if let Some(bytes) = ev.val.clone() {
                             // Interpret as UTF-8 if possible, otherwise store base64 string
                             let value = String::from_utf8(bytes.clone())
-                                .unwrap_or_else(|_| base64::encode(bytes));
+                                .unwrap_or_else(|_| BASE64_STANDARD.encode(bytes));
                             // We apply by writing the resulting value (idempotent)
                             if let Err(e) = guard.set(ev.key.clone(), value) {
                                 warn!("Failed to apply event to store: {}", e);
