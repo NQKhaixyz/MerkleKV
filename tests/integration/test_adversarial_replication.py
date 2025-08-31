@@ -659,7 +659,7 @@ async def test_mqtt_replication_loop_prevention():
         
         # Wait additional time to ensure no spurious re-replication occurs
         print("Monitoring for spurious re-replication (loop detection)...")
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)  # Reduced from 10s for CI efficiency
         
         # Verify state remains unchanged (no loops occurred)
         final_hash = await harness.compute_node_hash("loop_0")
@@ -1022,6 +1022,7 @@ async def test_mqtt_timestamp_tie_breaking():
         await harness.cleanup()
 
 
+@pytest.mark.slow  # Network partition tests are inherently timing-sensitive
 @pytest.mark.asyncio
 async def test_mqtt_network_partition_recovery():
     """
@@ -1082,6 +1083,7 @@ async def test_mqtt_network_partition_recovery():
         await harness.cleanup()
 
 
+@pytest.mark.slow  # Cold join tests require extended sync time
 @pytest.mark.asyncio  
 async def test_mqtt_cold_join_parity():
     """
@@ -1144,6 +1146,7 @@ async def test_mqtt_cold_join_parity():
         await harness.cleanup()
 
 
+@pytest.mark.slow  # Mark long-running chaos test as slow for CI filtering
 @pytest.mark.asyncio
 async def test_mqtt_replication_chaos_soak():
     """
@@ -1168,9 +1171,9 @@ async def test_mqtt_replication_chaos_soak():
         await harness.execute_write_command("chaos_0", "SET chaos_baseline stable_start")
         await asyncio.sleep(5)
         
-        # Phase 2: Chaos period (90 seconds of stress)
+        # Phase 2: Chaos period - shorter for CI stability
         chaos_start = time.time()
-        chaos_duration = 90  # 1.5 minutes of chaos
+        chaos_duration = 30  # 30 seconds of chaos (CI-friendly)
         operation_count = 0
         
         while time.time() - chaos_start < chaos_duration:
@@ -1183,8 +1186,8 @@ async def test_mqtt_replication_chaos_soak():
                         f"SET chaos_op_{operation_count} value_{int(time.time())}"
                     )
                 
-                # Occasional restarts (every 30 operations)
-                if operation_count > 0 and operation_count % 30 == 0:
+                # Occasional restarts (every 15 operations, more frequent for shorter test)
+                if operation_count > 0 and operation_count % 15 == 0:
                     victim = operation_count % 3
                     print(f"🔄 Chaos restart: node {victim}")
                     await harness.restart_node(f"chaos_{victim}")

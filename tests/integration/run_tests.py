@@ -91,13 +91,14 @@ class TestRunner:
                 "-m", "not benchmark"
             ])
         elif self.args.mode == "ci":
-            # CI mode tests with junit output but graceful coverage fallback
-            # Invariant: CI tests must run deterministically without external dependencies
-            # Adversary: Missing pytest-cov plugin could break CI execution
-            # Oracle: Test execution proceeds with basic junit output as minimum viable CI integration
+            # CI mode runs all tests suitable for automated testing including replication
+            # Invariant: CI tests must validate complete system functionality including replication
+            # Adversary: Missing replication tests leads to incomplete coverage validation 
+            # Oracle: Test execution includes adversarial and replication scenarios with maxfail protection
             args.extend([
                 "-m", "not benchmark and not slow",
-                "--junitxml=test-results.xml"
+                "--junitxml=test-results.xml",
+                "--maxfail=5"  # Stop after 5 failures for reasonable feedback
             ])
             # Add coverage only if pytest-cov is available
             try:

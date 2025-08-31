@@ -42,7 +42,10 @@ def main():
         ],
         "Replication": [
             "test_replication.py",
-            "test_replication_simple.py"  # Note: This one runs via script
+            "test_replication_simple.py",  # Note: This one runs via script
+            "test_current_replication_behavior.py",  # Added: Current replication behavior validation
+            "test_replication_unit.py",  # Added: Unit-level replication tests
+            "test_adversarial_replication.py"  # Added: Adversarial replication testing
         ],
         "Performance": [
             "test_benchmark.py"
