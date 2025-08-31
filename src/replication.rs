@@ -38,7 +38,7 @@
 //! - Conflict resolution for concurrent writes
 
 use anyhow::Result;
-use log::{error, warn};
+use log::{error, info, warn};
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -96,11 +96,6 @@ impl Replicator {
             config.replication.mqtt_port,
         );
         mqtt_options.set_keep_alive(Duration::from_secs(30));
-        // Academic Context: Invariant: Large values must replicate without truncation
-        // Adversary: Default MQTT payload limits cause silent data loss
-        // Oracle: Explicit max_packet_size ensures payload integrity preservation
-        let max_size = 16 * 1024 * 1024; // 16MB max packet size for large values
-        mqtt_options.set_max_packet_size(max_size, max_size);
         
         // Create MQTT client and event loop
         let (client, mut eventloop) = AsyncClient::new(mqtt_options, 10);
@@ -369,7 +364,7 @@ impl Replicator {
                     last_seq.insert(ev.src.clone(), seq.max(last_seq.get(&ev.src).cloned().unwrap_or(0)));
                 }
 
-                let guard = store.lock().await;
+                let mut guard = store.lock().await;
                 match ev.op {
                     OpKind::Del => {
                         guard.delete(&ev.key);

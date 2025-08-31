@@ -352,10 +352,7 @@ impl Server {
         stats: Arc<ServerStats>,
     replicator: Option<Replicator>,
     ) -> Result<()> {
-        // Academic Context: Invariant: Large values must be supported without truncation
-        // Adversary: Fixed buffer sizes cause silent data loss for large payloads
-        // Oracle: Dynamic buffer allocation preserves complete data integrity
-        let mut buffer = vec![0; 64 * 1024]; // 64KB initial buffer for large commands
+        let mut buffer = [0; 1024];
         let protocol = Protocol::new();
 
         // Local helper describing what to publish after the storage write.
