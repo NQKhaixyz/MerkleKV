@@ -227,6 +227,7 @@ async def test_basic_node_operations():
 
 
 @pytest.mark.slow  # Extended observation period for replication testing
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_nodes_operate_independently():
     """
