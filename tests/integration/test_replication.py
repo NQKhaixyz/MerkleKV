@@ -180,6 +180,7 @@ class MQTTTestClient:
         except Exception as e:
             print(f"MQTT monitoring error: {e}")
 
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_basic_replication_setup():
     """Test that replication nodes can be created and connected."""
@@ -216,6 +217,7 @@ async def test_basic_replication_setup():
             if config_file.exists():
                 config_file.unlink()
 
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_set_operation_replication(unique_topic_prefix):
     """Test that SET operations are replicated between nodes."""
@@ -257,6 +259,7 @@ async def test_set_operation_replication(unique_topic_prefix):
             if config_file.exists():
                 config_file.unlink()
 
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_delete_operation_replication(unique_topic_prefix):
     """Test that DELETE operations are replicated between nodes."""
@@ -310,6 +313,7 @@ async def test_delete_operation_replication(unique_topic_prefix):
             if config_file.exists():
                 config_file.unlink()
 
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_numeric_operations_replication():
     """Test that INC/DEC operations are replicated between nodes."""
@@ -365,6 +369,7 @@ async def test_numeric_operations_replication():
             if config_file.exists():
                 config_file.unlink()
 
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_string_operations_replication():
     """Test that APPEND/PREPEND operations are replicated between nodes."""
@@ -420,6 +425,7 @@ async def test_string_operations_replication():
             if config_file.exists():
                 config_file.unlink()
 
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_concurrent_operations_replication():
     """Test replication behavior with concurrent operations on multiple nodes."""
@@ -473,6 +479,7 @@ async def test_concurrent_operations_replication():
             if config_file.exists():
                 config_file.unlink()
 
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_replication_with_node_restart():
     """Test replication behavior when a node is restarted."""
@@ -544,6 +551,7 @@ async def test_replication_with_node_restart():
             if config_file.exists():
                 config_file.unlink()
 
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_replication_loop_prevention(unique_topic_prefix):
     """Test that nodes don't create infinite loops by processing their own messages."""
@@ -594,6 +602,7 @@ async def test_replication_loop_prevention(unique_topic_prefix):
         if config1.exists():
             config1.unlink()
 
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_malformed_mqtt_message_handling(unique_topic_prefix):
     """Test that nodes handle malformed MQTT messages gracefully."""

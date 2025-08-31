@@ -81,6 +81,14 @@ class CurrentBehaviorHarness:
                 "topic_prefix": self.topic_prefix,
                 "client_id": node_id
             }
+        else:
+            config["replication"] = {
+                "enabled": False,
+                "mqtt_broker": "localhost",  # Required field even when disabled
+                "mqtt_port": 1883,
+                "topic_prefix": "disabled",
+                "client_id": node_id
+            }
         
         config_path = temp_dir / "config.toml"
         with open(config_path, 'w') as f:
@@ -180,6 +188,7 @@ class CurrentBehaviorHarness:
                 pass
 
 
+@pytest.mark.slow  # Takes 30+ seconds due to extended observation periods
 @pytest.mark.asyncio
 async def test_basic_node_operations():
     """
@@ -217,6 +226,7 @@ async def test_basic_node_operations():
         await harness.cleanup()
 
 
+@pytest.mark.slow  # Extended observation period for replication testing
 @pytest.mark.asyncio
 async def test_nodes_operate_independently():
     """
@@ -373,6 +383,7 @@ async def test_document_replication_integration_gap():
         await harness.cleanup()
 
 
+@pytest.mark.slow  # Involves persistence testing with sled engine
 @pytest.mark.asyncio 
 async def test_persistence_works_independently():
     """
@@ -454,6 +465,7 @@ async def test_persistence_works_independently():
         await harness.cleanup()
 
 
+@pytest.mark.slow  # Involves multiple nodes and extended observation
 @pytest.mark.asyncio
 async def test_multiple_nodes_truly_isolated():
     """

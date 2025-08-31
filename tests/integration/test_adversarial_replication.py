@@ -547,7 +547,7 @@ async def test_mqtt_replication_with_node_restart():
         await asyncio.sleep(3)  # Allow MQTT replication
         
         # Restart node_2 during replication traffic
-        print("� Restarting node during replication...")
+        print("Restarting node during replication...")
         await harness.restart_node("restart_2")
         
         # Perform writes after restart (should replicate to restarted node)
@@ -1049,7 +1049,7 @@ async def test_mqtt_network_partition_recovery():
         assert baseline_converged, "Baseline convergence failed"
         
         # Simulate partition by stopping node 2
-        print("🔌 Simulating network partition...")
+        print("Simulating network partition...")
         await harness.stop_node("part_2")
         
         # Perform writes on remaining nodes (partition majority)
@@ -1063,7 +1063,7 @@ async def test_mqtt_network_partition_recovery():
         assert majority_converged, "Majority partition failed to converge"
         
         # Restart partitioned node (simulate recovery)
-        print("🔄 Recovering from partition...")
+        print("Recovering from partition...")
         await harness.restart_node("part_2")
         # Event-driven wait replaced with wait_for_convergence()
         
@@ -1116,7 +1116,7 @@ async def test_mqtt_cold_join_parity():
         established_hash = await harness.compute_node_hash("cold_0")
         
         # Cold-join: Start 4th node into active cluster
-        print("❄️ Cold-joining 4th node to established cluster...")
+        print("Cold-joining 4th node to established cluster...")
         await harness.start_node("cold_3", ports[3])
         
         # Perform additional writes after cold join
@@ -1165,7 +1165,7 @@ async def test_mqtt_replication_chaos_soak():
         for i, port in enumerate(ports):
             await harness.start_node(f"chaos_{i}", port)
             
-        print("🌪️ Beginning chaos soak test...")
+        print("Beginning chaos soak test...")
         
         # Phase 1: Establish baseline
         await harness.execute_write_command("chaos_0", "SET chaos_baseline stable_start")
@@ -1189,7 +1189,7 @@ async def test_mqtt_replication_chaos_soak():
                 # Occasional restarts (every 15 operations, more frequent for shorter test)
                 if operation_count > 0 and operation_count % 15 == 0:
                     victim = operation_count % 3
-                    print(f"🔄 Chaos restart: node {victim}")
+                    print(f"Chaos restart: node {victim}")
                     await harness.restart_node(f"chaos_{victim}")
                     await asyncio.sleep(2)  # Brief recovery time
                 
@@ -1201,7 +1201,7 @@ async def test_mqtt_replication_chaos_soak():
                 await asyncio.sleep(2)
                 continue
                 
-        print(f"🏁 Chaos period complete. {operation_count} operations attempted.")
+        print(f"Chaos period complete. {operation_count} operations attempted.")
         
         # Phase 3: Recovery and convergence validation  
         # Event-driven wait replaced with wait_for_convergence()
