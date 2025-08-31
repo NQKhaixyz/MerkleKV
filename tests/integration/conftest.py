@@ -34,6 +34,21 @@ TEST_STORAGE_PATH = "test_data"
 SERVER_TIMEOUT = 30  # seconds to wait for server startup
 CLIENT_TIMEOUT = 5   # seconds for client operations
 
+def check_mqtt_broker_availability(broker: str = "test.mosquitto.org", port: int = 1883, timeout: float = 5.0) -> bool:
+    """
+    Check if MQTT broker is available for replication tests.
+    
+    Academic Enhancement: Infrastructure availability oracle for CI stability
+    Invariant: Replication tests require functioning MQTT broker connectivity
+    Adversary: Public MQTT broker downtime or network connectivity issues
+    Oracle: TCP socket connection success validates broker reachability
+    """
+    try:
+        with socket.create_connection((broker, port), timeout=timeout):
+            return True
+    except (socket.timeout, ConnectionRefusedError, OSError):
+        return False
+
 class MerkleKVServer:
     """Manages a MerkleKV server process for testing."""
     
@@ -401,6 +416,23 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "integration: marks tests as integration tests"
+    )
+    config.addinivalue_line(
+        "markers", "replication: marks tests requiring MQTT broker connectivity"
+    )
+
+# MQTT broker availability check decorator
+def requires_mqtt_broker(broker="test.mosquitto.org", port=1883):
+    """
+    Decorator to skip replication tests if MQTT broker is unavailable.
+    
+    Academic rationale: External infrastructure dependencies in distributed system tests
+    create non-deterministic CI failures. Graceful degradation with academic documentation
+    maintains test suite stability while preserving functional validation scope.
+    """
+    return pytest.mark.skipif(
+        not check_mqtt_broker_availability(broker, port),
+        reason=f"MQTT broker {broker}:{port} not available - public broker connectivity required for replication tests"
     )
 
 def pytest_collection_modifyitems(config, items):
