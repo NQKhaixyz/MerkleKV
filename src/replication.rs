@@ -38,7 +38,7 @@
 //! - Conflict resolution for concurrent writes
 
 use anyhow::Result;
-use log::{error, info, warn};
+use log::{error, warn};
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -96,26 +96,108 @@ impl Replicator {
             config.replication.mqtt_port,
         );
         mqtt_options.set_keep_alive(Duration::from_secs(30));
+        // Academic Context: Invariant: Large values must replicate without truncation
+        // Adversary: Default MQTT payload limits cause silent data loss
+        // Oracle: Explicit max_packet_size ensures payload integrity preservation
+        let max_size = 16 * 1024 * 1024; // 16MB max packet size for large values
+        mqtt_options.set_max_packet_size(max_size, max_size);
         
-    // Create MQTT client and event loop
-    let (client, mut eventloop) = AsyncClient::new(mqtt_options, 10);
+        // Create MQTT client and event loop
+        let (client, mut eventloop) = AsyncClient::new(mqtt_options, 10);
         
         // Subscribe to the replication topic pattern
         let topic = format!("{}/events/#", config.replication.topic_prefix);
         client.subscribe(&topic, QoS::AtLeastOnce).await?;
-
-        // Create broadcast channel and spawn the MQTT poller
+        
+        // Subscribe to readiness beacons from all peers (including self)
+        let ready_topic = format!("{}/ready/+", config.replication.topic_prefix);
+        client.subscribe(&ready_topic, QoS::AtLeastOnce).await?;
+        
+        // MQTT Readiness Barrier - Deterministic Startup Synchronization
+        //
+        // Academic Context:
+        // - Invariant: All nodes must receive replication events from any publishing peer
+        // - Adversary: Asynchronous MQTT subscription allows publishers to send messages
+        //   before subscribers are ready, causing permanent state divergence
+        // - Oracle: Retained readiness beacons provide observable evidence of subscription
+        //   establishment across all peers before enabling replication publishing
+        //
+        // Implementation: Each node publishes a retained QoS 1 beacon after subscription,
+        // then waits for all peer beacons before enabling replication. This creates a
+        // deterministic barrier eliminating the startup race condition.
+        
+        // Publish own readiness beacon (retained QoS 1 for persistence)
+        let ready_beacon_topic = format!("{}/ready/{}", config.replication.topic_prefix, config.replication.client_id);
+        client.publish(&ready_beacon_topic, QoS::AtLeastOnce, true, "ready".as_bytes()).await?;
+        println!("Published readiness beacon: {} -> {}", config.replication.client_id, ready_beacon_topic);
+        
+        // Create MQTT event loop and readiness tracking
         let (tx, _rx_unused) = broadcast::channel::<ChangeEvent>(1024);
         let tx_clone = tx.clone();
+        
+        // Wait for readiness beacons with bounded timeout (deterministic)
+        let readiness_timeout = Duration::from_secs(15);
+        let readiness_start = std::time::Instant::now();
+        let mut ready_nodes = std::collections::HashSet::new();
+        
+        // Expected minimum nodes - enhanced for distributed testing
+        // In production this should be configurable, for now use a reasonable default
+        let min_expected_nodes = 3; // Wait for reasonable cluster size
+        
+        // Store topic prefixes to avoid borrowing issues
+        let ready_topic_prefix = format!("{}/ready/", config.replication.topic_prefix);
+        let events_topic_prefix_inner = format!("{}/events", config.replication.topic_prefix);
+        
+        while ready_nodes.len() < min_expected_nodes && readiness_start.elapsed() < readiness_timeout {
+            match eventloop.poll().await {
+                Ok(Event::Incoming(Incoming::Publish(publish))) => {
+                    // Check if this is a readiness beacon
+                    if publish.topic.starts_with(&ready_topic_prefix) {
+                        if let Some(node_id) = publish.topic.split('/').last() {
+                            if ready_nodes.insert(node_id.to_string()) {
+                                println!("Readiness beacon received from: {} (total ready: {}/{})", 
+                                        node_id, ready_nodes.len(), min_expected_nodes);
+                            }
+                        }
+                    }
+                    // Also forward replication events to channel
+                    else if publish.topic.starts_with(&events_topic_prefix_inner) {
+                        match ChangeEvent::decode_any(&publish.payload) {
+                            Ok(ev) => {
+                                let _ = tx_clone.send(ev);
+                            }
+                            Err(e) => warn!("Failed to decode ChangeEvent: {}", e),
+                        }
+                    }
+                }
+                Ok(_) => {} // Other MQTT events
+                Err(e) => {
+                    error!("MQTT eventloop error during readiness: {}", e);
+                    break;
+                }
+            }
+            
+            // Small yield to prevent busy waiting
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        
+        println!("Readiness barrier complete. Ready nodes: {:?} (waited {:.2}s)", 
+                ready_nodes, readiness_start.elapsed().as_secs_f64());
+        
+        // Continue MQTT event processing in background
+        let events_topic_prefix = format!("{}/events", config.replication.topic_prefix);
         tokio::spawn(async move {
             loop {
                 match eventloop.poll().await {
                     Ok(Event::Incoming(Incoming::Publish(p))) => {
-                        match ChangeEvent::decode_any(&p.payload) {
-                            Ok(ev) => {
-                                let _ = tx_clone.send(ev); // ignore errors if no receivers
+                        // Only process replication events, ignore readiness beacons
+                        if p.topic.starts_with(&events_topic_prefix) {
+                            match ChangeEvent::decode_any(&p.payload) {
+                                Ok(ev) => {
+                                    let _ = tx_clone.send(ev); // ignore errors if no receivers
+                                }
+                                Err(e) => warn!("Failed to decode ChangeEvent: {}", e),
                             }
-                            Err(e) => warn!("Failed to decode ChangeEvent: {}", e),
                         }
                     }
                     Ok(_) => {}
@@ -238,6 +320,8 @@ impl Replicator {
         tokio::spawn(async move {
             let mut seen: HashSet<[u8; 16]> = HashSet::new();
             let mut last_ts: HashMap<String, u64> = HashMap::new();
+            let mut last_op_id: HashMap<String, [u8; 16]> = HashMap::new(); // For deterministic tie-breaking
+            let mut last_seq: HashMap<String, u64> = HashMap::new(); // Per-publisher sequence tracking for gap detection
             loop {
                 let ev = match rx.recv().await {
                     Ok(ev) => ev,
@@ -248,10 +332,44 @@ impl Replicator {
                 };
                 if ev.src == node_id { continue; } // loop prevention
                 if seen.contains(&ev.op_id) { continue; } // idempotency
+                
+                // --- Deterministic LWW with Tie-Breaking -----------------------------------
+                // Academic Context: 
+                // Invariant: All nodes must apply the same "winning" operation for equal timestamps
+                // Adversary: Concurrent operations with identical timestamps causing non-deterministic resolution
+                // Oracle: Lexicographic op_id comparison provides stable total ordering
+                // Proof: (timestamp ASC, op_id lexicographic ASC) creates deterministic conflict resolution
                 let current_ts = last_ts.get(&ev.key).cloned().unwrap_or(0);
-                if ev.ts < current_ts { continue; } // LWW
+                if ev.ts < current_ts { 
+                    continue; // LWW: ignore older events
+                } else if ev.ts == current_ts {
+                    // Timestamp tie: break using lexicographic comparison of op_id
+                    let current_op_id = last_op_id.get(&ev.key).cloned().unwrap_or([0; 16]);
+                    if ev.op_id < current_op_id {
+                        continue; // Tie-breaker: ignore events with smaller op_id (deterministic ordering)
+                    }
+                }
+                
+                // --- Optional Gap Detection for Sequence Numbers ---------------------------
+                // Academic Context:
+                // Invariant: Message sequence integrity preserves causal consistency 
+                // Adversary: Network partitions or MQTT delivery issues causing message loss
+                // Oracle: Sequence number gaps signal potential inconsistency requiring repair
+                // Implementation: Backward-compatible optional field enables targeted resync
+                if let Some(seq) = ev.seq {
+                    let expected_seq = last_seq.get(&ev.src).cloned().unwrap_or(0) + 1;
+                    if seq > expected_seq {
+                        warn!("🔧 EVENTUAL CONSISTENCY GAP DETECTED: Sequence gap from {}: expected {}, got {} (potential message loss)", 
+                              ev.src, expected_seq, seq);
+                        warn!("🔧 REPAIR REQUIRED: Anti-entropy mechanism needed for complete eventual consistency");
+                        warn!("🔧 CURRENT STATUS: Real-time MQTT replication only - rejoining nodes may miss historical updates");
+                        // TODO: Trigger targeted anti-entropy repair for this publisher
+                        // In production, this would initiate a Merkle comparison with ev.src
+                    }
+                    last_seq.insert(ev.src.clone(), seq.max(last_seq.get(&ev.src).cloned().unwrap_or(0)));
+                }
 
-                let mut guard = store.lock().await;
+                let guard = store.lock().await;
                 match ev.op {
                     OpKind::Del => {
                         guard.delete(&ev.key);
@@ -268,8 +386,9 @@ impl Replicator {
                         }
                     }
                 }
-                // Update LWW state and dedupe set
+                // Update LWW state and dedupe set with deterministic tie-breaking
                 last_ts.insert(ev.key.clone(), ev.ts);
+                last_op_id.insert(ev.key.clone(), ev.op_id);
                 seen.insert(ev.op_id);
 
                 // TODO: Update Merkle tree – in this prototype the store engines

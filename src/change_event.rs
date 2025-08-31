@@ -56,6 +56,7 @@ pub enum OpKind {
 /// - `op_id`: A 128-bit identifier (UUID v4) for idempotency/deduplication.
 /// - `prev`: Optional 32-byte Merkle root (or leaf) hash to assist anti-entropy.
 /// - `ttl`: Optional TTL-in-seconds hint (not enforced by the in-memory engine).
+/// - `seq`: Optional sequence number per publisher for gap detection (backward-compatible).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChangeEvent {
     /// Schema version (allows additive, backward-compatible upgrades)
@@ -76,6 +77,8 @@ pub struct ChangeEvent {
     pub prev: Option<[u8; 32]>,
     /// Optional TTL in seconds (advisory in this prototype)
     pub ttl: Option<u64>,
+    /// Optional sequence number per publisher for gap detection (backward-compatible)
+    pub seq: Option<u64>,
 }
 
 impl ChangeEvent {
@@ -106,6 +109,7 @@ impl ChangeEvent {
             op_id,
             prev,
             ttl,
+            seq: None, // Default sequence number to None for backward compatibility
         }
     }
 
