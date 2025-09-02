@@ -69,6 +69,11 @@ jobs:
           RUST_LOG: info
           RUST_BACKTRACE: 1
 
+      - name: Run SCAN Command Tests       
+        run: |
+          cd tests/integration
+          python -m pytest test_scan_tcp.py -v --tb=short --junitxml=scan_results.xml
+          
       - name: Run Numeric Operations Tests
         run: |
           cd tests/integration

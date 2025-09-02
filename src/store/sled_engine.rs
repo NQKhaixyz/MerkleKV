@@ -55,7 +55,20 @@ impl KVEngineStoreTrait for SledEngine {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
+    fn scan(&self, prefix: &str) -> Vec<String> {
+        
+        if prefix.is_empty() {
+            return self.keys();
+        }
 
+        self.tree
+            .scan_prefix(prefix.as_bytes())
+            .filter_map(|res| res.ok())               
+            .filter_map(|(k, _v)|                       
+                String::from_utf8(k.to_vec()).ok()
+            )
+            .collect()
+    }
     fn increment(&self, key: &str, amount: Option<i64>) -> Result<i64> {
         let amt = amount.unwrap_or(1);
         // get current

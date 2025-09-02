@@ -59,6 +59,9 @@ pub struct ServerStats {
     
     /// Number of GET commands processed
     pub get_commands: AtomicU64,
+
+    /// Number of SCAN commands processed
+    pub scan_commands: AtomicU64,
     
     /// Number of SET commands processed
     pub set_commands: AtomicU64,
@@ -92,6 +95,7 @@ impl Clone for ServerStats {
             active_connections: AtomicU64::new(self.active_connections.load(Ordering::Relaxed)),
             total_commands: AtomicU64::new(self.total_commands.load(Ordering::Relaxed)),
             get_commands: AtomicU64::new(self.get_commands.load(Ordering::Relaxed)),
+            scan_commands: AtomicU64::new(self.scan_commands.load(Ordering::Relaxed)),
             set_commands: AtomicU64::new(self.set_commands.load(Ordering::Relaxed)),
             delete_commands: AtomicU64::new(self.delete_commands.load(Ordering::Relaxed)),
             numeric_commands: AtomicU64::new(self.numeric_commands.load(Ordering::Relaxed)),
@@ -119,6 +123,7 @@ impl ServerStats {
             active_connections: AtomicU64::new(0),
             total_commands: AtomicU64::new(0),
             get_commands: AtomicU64::new(0),
+            scan_commands: AtomicU64::new(0),
             set_commands: AtomicU64::new(0),
             delete_commands: AtomicU64::new(0),
             numeric_commands: AtomicU64::new(0),
@@ -154,6 +159,9 @@ impl ServerStats {
             Command::Get { .. } => {
                 self.get_commands.fetch_add(1, Ordering::Relaxed);
             }
+            Command::Scan { .. } => {
+                self.scan_commands.fetch_add(1, Ordering::Relaxed);
+            }
             Command::Set { .. } => {
                 self.set_commands.fetch_add(1, Ordering::Relaxed);
             }
@@ -188,6 +196,7 @@ impl ServerStats {
         result.push_str(&format!("active_connections:{}\r\n", self.active_connections.load(Ordering::Relaxed)));
         result.push_str(&format!("total_commands:{}\r\n", self.total_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("get_commands:{}\r\n", self.get_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("scan_commands:{}\r\n", self.scan_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("set_commands:{}\r\n", self.set_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("delete_commands:{}\r\n", self.delete_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("numeric_commands:{}\r\n", self.numeric_commands.load(Ordering::Relaxed)));
@@ -398,6 +407,15 @@ impl Server {
                                 Some(value) => format!("VALUE {}\r\n", value),
                                 None => "NOT_FOUND\r\n".to_string(),
                             }
+                        }
+                        Command::Scan { prefix } => {
+                            let store = store.lock().await;
+                            let results = store.scan(&prefix);
+                            let mut response = format!("KEYS {}\r\n", results.len());
+                            for k in results {
+                                response.push_str(&format!("{}\r\n", k));
+                            }
+                            response
                         }
                         Command::Set { key, value } => {
                             let store = store.lock().await;

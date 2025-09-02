@@ -72,7 +72,7 @@ class TestRunner:
         # Add mode-specific arguments
         if self.args.mode == "basic":
             args.extend([
-                "-k", "TestBasicOperations or TestDataPersistence",
+                "-k", "TestBasicOperations or TestDataPersistence or TestScanOverTcp",
                 "-m", "not benchmark and not slow"
             ])
         elif self.args.mode == "concurrency":

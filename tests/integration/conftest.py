@@ -317,6 +317,30 @@ class MerkleKVClient:
             return self.send_command(f'SET {key} ""')
         else:
             return self.send_command(f"SET {key} {value}")
+
+    def scan(self, prefix: str) -> list[str]:
+        resp = self.send_command(f"SCAN {prefix}")
+        lines = resp.splitlines()
+
+        if not lines:
+            return []
+
+        header = lines[0].strip()
+
+        if header.startswith("ERROR"):
+            raise RuntimeError(header)
+        if header == "NOT_FOUND":
+            return []
+
+        if not header.startswith("KEYS "):
+            return [l.strip() for l in lines if l and not l.startswith("VALUES")]
+        try:
+            n = int(header.split()[1])
+        except (IndexError, ValueError):
+            raise RuntimeError(f"Bad SCAN header: {header}")
+
+        keys = [l.strip() for l in lines[1:1 + n]]
+        return keys
     
     def delete(self, key: str) -> str:
         """Delete a key."""
@@ -351,6 +375,7 @@ class MerkleKVClient:
             return self.send_command(f'PREPEND {key} ""')
         else:
             return self.send_command(f"PREPEND {key} {value}")
+    
 
 @pytest.fixture(scope="session")
 def temp_test_dir() -> Generator[Path, None, None]:

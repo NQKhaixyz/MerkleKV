@@ -76,6 +76,11 @@ pub enum Command {
         key: String,
     },
 
+    /// Scan for keys matching a prefix
+    Scan {
+        /// The prefix to scan for
+        prefix: String,
+    },
     /// Increment a numeric value
     Increment {
         /// The key to increment
@@ -208,7 +213,7 @@ impl Protocol {
         if first_space.is_none() {
             // Single word command
             match input.to_uppercase().as_str() {
-                "GET" | "SET" | "DELETE" | "DEL" => {
+                "GET" | "SET" | "DELETE" | "DEL" | "SCAN" => {
                     return Err(anyhow!("{} command requires arguments", input.to_uppercase()));
                 }
                 "TRUNCATE" => return Ok(Command::Truncate),
@@ -265,6 +270,17 @@ impl Protocol {
                 }
                 Ok(Command::Delete {
                     key: rest.to_string(),
+                })
+            }
+            "SCAN" => {
+                if rest.is_empty() {
+                    return Err(anyhow!("SCAN command requires a prefix"));
+                }
+                if rest.contains(' ') {
+                    return Err(anyhow!("SCAN command accepts only one argument"));
+                }
+                Ok(Command::Scan {
+                    prefix: rest.to_string(),
                 })
             }
             "INC" => {
@@ -469,6 +485,22 @@ mod tests {
                 key: "test_key".to_string()
             }
         );
+    }
+
+    #[test]
+    fn test_parse_scan() {
+        let protocol = Protocol::new();
+        let result = protocol.parse("SCAN test_prefix").unwrap();
+        assert_eq!(
+            result,
+            Command::Scan {
+                prefix: "test_prefix".to_string()
+            }
+        );
+        // Test SCAN with empty prefix
+        assert!(protocol.parse("SCAN").is_err());
+        // Test SCAN with spaces in prefix
+        assert!(protocol.parse("SCAN test prefix").is_err());
     }
 
     #[test]

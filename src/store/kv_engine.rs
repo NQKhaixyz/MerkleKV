@@ -148,6 +148,17 @@ impl KvEngine {
         self.data.read().unwrap().keys().cloned().collect()
     }
 
+    pub fn scan(&self, prefix: &str) -> Vec<String> {
+        let map = self.data.read().unwrap();
+        if prefix.is_empty() {
+            return map.keys().cloned().collect();
+        }
+        map.keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect()
+    }
+
     /// Increment a numeric value stored at the given key.
     /// 
     /// If the key doesn't exist, it will be created with the increment amount.
@@ -364,6 +375,15 @@ impl KVEngineStoreTrait for KvEngine {
         self.data.read().unwrap().keys().cloned().collect()
     }
 
+    fn scan(&self, prefix: &str) -> Vec<String> {
+        if prefix.is_empty() {
+            return self.keys();
+        }
+        self.keys()
+            .into_iter()
+            .filter(|k| k.starts_with(prefix))
+            .collect()
+    }
     /// Get the number of key-value pairs in the store.
     ///
     /// # Returns
