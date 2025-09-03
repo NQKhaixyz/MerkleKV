@@ -225,7 +225,9 @@ class TestConcurrentScenarios:
             iterations = 0
             max_iterations = 20  # Safety limit
             
-            while cursor != 0 and iterations < max_iterations:
+            # Academic Note: Handle both multi-iteration and single-iteration scenarios
+            # In concurrent systems, small datasets may complete in one SCAN operation
+            while iterations < max_iterations:
                 command = f"SCAN {cursor} COUNT 5\r\n"
                 sock.send(command.encode())
                 response = sock.recv(4096).decode()
@@ -234,14 +236,22 @@ class TestConcurrentScenarios:
                     break
                 
                 lines = response.strip().split('\r\n')
-                cursor = int(lines[0].split()[1])
+                next_cursor = int(lines[0].split()[1])
                 
                 # Collect keys from this batch
+                batch_keys = []
                 for line in lines[1:]:
                     if line and not line.startswith("SCAN"):
+                        batch_keys.append(line)
                         scanned_keys.append(line)
                 
                 iterations += 1
+                
+                # If no keys in this batch or cursor is 0, we're done
+                if len(batch_keys) == 0 or next_cursor == 0:
+                    break
+                    
+                cursor = next_cursor
             
             sock.close()
             return thread_id, scanned_keys, iterations
@@ -257,6 +267,8 @@ class TestConcurrentScenarios:
         
         # Verify all scans completed successfully
         for thread_id, (keys, iterations) in scan_results.items():
+            # Academic Note: In concurrent access patterns, expect at least one key per thread
+            # All threads should get data since they scan the same shared keyspace  
             assert len(keys) > 0, f"Thread {thread_id} found no keys"
             assert iterations > 0, f"Thread {thread_id} made no iterations"
             # All keys should be from our test set

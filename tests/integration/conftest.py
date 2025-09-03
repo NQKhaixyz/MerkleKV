@@ -474,5 +474,32 @@ def send_command(client, command: str) -> str:
     return response
 
 
+def truncate_database():
+    """Truncate the database to ensure clean state for tests."""
+    try:
+        with connect_to_server() as client:
+            response = send_command(client, "TRUNCATE")
+            client.close()
+            return "OK" in response
+    except Exception:
+        return False
+
+
+@pytest.fixture(scope="function", autouse=True)
+def clean_database():
+    """Automatically truncate database before each test."""
+    # Try to truncate before the test (ignore failures as server may not be running yet)
+    try:
+        truncate_database()
+    except:
+        pass
+    yield
+    # Try to truncate after the test (ignore failures)
+    try:
+        truncate_database()
+    except:
+        pass
+
+
 # Note: ReplicationTestSetup has been moved to use simple functions in test_replication.py
 # The replication_setup fixture is no longer needed
