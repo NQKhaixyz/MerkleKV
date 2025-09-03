@@ -38,7 +38,7 @@
 //! - Conflict resolution for concurrent writes
 
 use anyhow::Result;
-use log::{error, info, warn};
+use log::{error, warn};
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

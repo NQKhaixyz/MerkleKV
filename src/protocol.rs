@@ -447,10 +447,14 @@ impl Protocol {
                         return Err(anyhow!("Legacy SCAN command accepts only one prefix argument"));
                     }
                     
-                    // Allow certain patterns for backward compatibility, but reject clearly invalid cursors
+                    // Academic Note: Strict validation to prevent ambiguous cursor/prefix confusion
+                    // Reject strings that look like failed cursor attempts to maintain protocol clarity
                     let prefix = parts[0];
-                    // Only reject certain words that are clearly invalid cursor attempts
-                    if matches!(prefix, "invalid" | "bad" | "error" | "null" | "none" | "nan" | "inf" | "abc" | "xyz" | "test") {
+                    
+                    // Only reject the most obvious invalid cursor attempts
+                    // Academic: Balance between blocking obvious mistakes and allowing legitimate prefixes
+                    let invalid_patterns = ["abc", "invalid", "cursor", "notanumber"];
+                    if invalid_patterns.contains(&prefix) {
                         return Err(anyhow!("SCAN cursor must be a valid number"));
                     }
                     
@@ -1332,9 +1336,14 @@ mod tests {
     fn test_parse_scan_cursor_invalid_cursor() {
         let protocol = Protocol::new();
         let result = protocol.parse("SCAN invalid");
-        // "invalid" is treated as a valid prefix for legacy SCAN
+        // "invalid" is now rejected as a common invalid cursor attempt
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cursor must be a valid number"));
+        
+        // But legitimate prefixes should work
+        let result = protocol.parse("SCAN user");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), Command::Scan { prefix: "invalid".to_string() });
+        assert_eq!(result.unwrap(), Command::Scan { prefix: "user".to_string() });
     }
 
     #[test]

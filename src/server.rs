@@ -815,6 +815,15 @@ impl Server {
         stats: &ServerStats, 
         store: &Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>
     ) -> String {
+        // Academic: Validate section names to maintain protocol clarity and prevent
+        // silent failures in monitoring system integration
+        if let Some(section_name) = section {
+            let valid_sections = ["server", "memory", "storage", "replication", "all"];
+            if !valid_sections.contains(&section_name) {
+                return format!("ERROR Invalid INFO section: {}\r\n", section_name);
+            }
+        }
+        
         let mut info = String::new();
         let show_all = section.is_none() || section == Some("all");
         let show_section = |name| show_all || section == Some(name);
@@ -823,6 +832,10 @@ impl Server {
             info.push_str("# Server\r\n");
             // Stable schema for monitoring: consistent field names
             info.push_str(&format!("version:{}\r\n", env!("CARGO_PKG_VERSION")));
+            // Academic: Provide both field names for backward compatibility while establishing
+            // a stable observability schema. uptime_seconds is the primary field, 
+            // uptime_in_seconds maintains compatibility with existing monitoring systems
+            info.push_str(&format!("uptime_seconds:{}\r\n", stats.uptime_seconds()));
             info.push_str(&format!("uptime_in_seconds:{}\r\n", stats.uptime_seconds()));
             info.push_str(&format!("connected_clients:{}\r\n", stats.active_connections.load(Ordering::Relaxed)));
             info.push_str(&format!("total_commands_processed:{}\r\n", stats.total_commands.load(Ordering::Relaxed)));
@@ -1049,9 +1062,7 @@ async fn sync_with_peer_basic(
     port: u16,
     store: &Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
 ) -> Result<()> {
-    use tokio::net::TcpStream;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::time::{timeout, Duration};
+    use tokio::time::Duration;
     use std::time::Instant;
     
     // Safety guardrails: Tunable timeout and retry parameters
@@ -1082,7 +1093,7 @@ async fn sync_with_peer_basic(
                     // Exponential backoff with simple jitter (academic: prevents thundering herd)
                     let base_delay = base_delay_ms * (2u64.pow(retry));
                     // Simple jitter using process id to avoid external dependencies
-                    let jitter = (std::process::id() as u64 % 50);
+                    let jitter = std::process::id() as u64 % 50;
                     let delay_ms = base_delay + jitter;
                     
                     warn!("SYNC attempt {} failed for {}: {}. Retrying in {}ms", 
