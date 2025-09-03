@@ -2,6 +2,7 @@
 
 A high-performance, distributed key-value store with self-healing replication, built in Rust.
 
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/NQKhaixyz/MerkleKV/integration-tests.yml)
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/AI-Decenter/MerkleKV/integration-tests.yml)
 [![Crates.io](https://img.shields.io/crates/v/merkledb.svg?style=for-the-badge)](https://crates.io/crates/merkledb)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
@@ -461,24 +462,66 @@ echo "SET hello world" | nc localhost 7878
 # Expected: OK
 
 echo "GET hello" | nc localhost 7878  
-# Expected: world
+# Expected: VALUE world
+
+# Test administrative commands (Issue #27 - Phase 1)
+echo "PING test" | nc localhost 7878
+# Expected: PONG test
+
+echo "INFO server" | nc localhost 7878
+# Expected: INFO section with server details
+
+echo "STATS" | nc localhost 7878
+# Expected: Server statistics
+
+echo "DBSIZE" | nc localhost 7878
+# Expected: Number of keys
+
+# Test key management commands (Issue #27 - Phase 2)
+echo "KEYS *" | nc localhost 7878
+# Expected: KEYS listing all keys
+
+echo "SCAN 0 COUNT 10" | nc localhost 7878
+# Expected: SCAN response with cursor-based pagination
+
+echo "EXISTS hello" | nc localhost 7878
+# Expected: 1 (key exists)
+
+# Test synchronization commands (Issue #27 - Phase 3)
+echo "HASH" | nc localhost 7878
+# Expected: HASH with deterministic hash value
+
+echo "REPLICATE STATUS" | nc localhost 7878
+# Expected: REPLICATION status
 
 echo "VERSION" | nc localhost 7878
-# Expected: MerkleKV 1.0.0
+# Expected: MerkleKV version
 ```
 
-#### 5. Run Integration Tests
+#### 5. Run Enhanced Integration Tests
 ```bash
 # Install Python dependencies
 cd tests/integration
 pip install -r requirements.txt
 
-# Run basic test suite
-python run_tests.py --mode basic
+# Run all 39 administrative command tests
+python -m pytest test_administrative_commands.py -v
+# Expected: All 39 tests pass ✅
+
+# Run enhanced edge case tests with production guardrails
+python -m pytest test_edge_cases_hardened.py -v
+# Expected: Production guardrail tests pass ✅
+
+# Run replication tests
+python -m pytest test_replication*.py -v
+# Expected: All 9 replication tests pass ✅
+
+# Run comprehensive test suite
+python run_tests.py --mode all
 # Expected: All tests should pass ✅
 ```
 
-**🎉 Congratulations!** You now have a working MerkleKV instance. Continue reading for multi-node clusters and advanced features.
+**🎉 Congratulations!** You now have a production-ready MerkleKV instance. Continue reading for multi-node clusters and advanced features.
 
 ### Installation & Setup
 
@@ -900,6 +943,32 @@ MerkleKV uses a simple, text-based protocol similar to Memcached. You can intera
 - **Responses**: Simple text responses for easy parsing
 - **Encoding**: UTF-8 text encoding
 
+### Command Quick Reference (Issue #27 Complete)
+
+| Category | Command | Syntax | Description |
+|----------|---------|--------|-------------|
+| **Phase 1: Info** | PING | `PING [message]` | Connection health check with optional echo |
+| | ECHO | `ECHO <message>` | Message reflection for network validation |
+| | INFO | `INFO [section]` | Server information (server/memory/storage/replication) |
+| | STATS | `STATS [RESET]` | Operation counters and metrics with optional reset |
+| | DBSIZE | `DBSIZE` | Keyspace cardinality (O(1) if indexed) |
+| **Phase 2: Keys** | KEYS | `KEYS <pattern>` | ⚠️ O(n) enumerate keys (use SCAN for production) |
+| | SCAN | `SCAN <cursor> [MATCH <pattern>] [COUNT <count>]` | Cursor-based key iteration with pagination |
+| | EXISTS | `EXISTS <key1> [key2] ...` | Multi-key existence checking |
+| **Phase 3: Sync** | SYNC | `SYNC <host> <port>` | Manual peer synchronization with timeout/retry |
+| | HASH | `HASH` | Deterministic hash of keyspace (sorted keys) |
+| | REPLICATE | `REPLICATE <STATUS\|ENABLE\|DISABLE>` | Runtime replication control |
+| **Basic Ops** | SET | `SET <key> <value>` | Store key-value pair with replication |
+| | GET | `GET <key>` | Retrieve value by key |
+| | DEL | `DEL <key>` | Delete key with replication |
+| **Numeric** | INCR | `INCR <key> [amount]` | Atomic increment (default: 1) |
+| | DECR | `DECR <key> [amount]` | Atomic decrement (default: 1) |
+| **String** | APPEND | `APPEND <key> <value>` | String concatenation (append) |
+| | PREPEND | `PREPEND <key> <value>` | String concatenation (prepend) |
+| **Server** | VERSION | `VERSION` | Server version information |
+| | FLUSH | `FLUSH` | Clear all data (development only) |
+| | SHUTDOWN | `SHUTDOWN` | Graceful server termination |
+
 ### Connecting to a Node
 
 ```bash
@@ -914,6 +983,8 @@ nc -v localhost 7878
 ```
 
 ### Available Commands
+
+MerkleKV supports a comprehensive set of commands across different categories:
 
 #### Basic Operations
 
@@ -946,18 +1017,18 @@ Retrieve a value by its key from the local node.
 ```bash
 # Get a user record
 GET user:100
-jane_doe
+VALUE jane_doe
 
 # Get non-existent key
 GET user:999
-(null)
+NOT_FOUND
 
 # Get configuration
 GET config:database
-{"host":"localhost","port":5432}
+VALUE {"host":"localhost","port":5432}
 ```
 
-**Response**: The value if found, `(null)` if key doesn't exist.
+**Response**: `VALUE <data>` if found, `NOT_FOUND` if key doesn't exist.
 
 ##### DEL Command
 Delete a key and its associated value from the distributed store.
@@ -975,6 +1046,241 @@ NOT_FOUND
 ```
 
 **Response**: `DELETED` on successful deletion, `NOT_FOUND` if key doesn't exist.
+
+#### Administrative Commands (Issue #27)
+
+##### Phase 1: Information Commands
+
+##### PING Command
+Test connectivity with optional message echo.
+
+**Syntax**: `PING [message]\r\n`
+
+```bash
+# Simple ping
+PING
+PONG
+
+# Ping with message
+PING test
+PONG test
+```
+
+##### ECHO Command
+Echo back a message for network testing.
+
+**Syntax**: `ECHO <message>\r\n`
+
+```bash
+ECHO hello world
+hello world
+```
+
+##### INFO Command
+Get detailed server information with stable metrics schema.
+
+**Syntax**: `INFO [section]\r\n`
+
+```bash
+# Get all server information
+INFO
+INFO
+# Server
+version:1.0.0
+uptime_in_seconds:3600
+connected_clients:5
+total_commands_processed:1250
+tcp_port:7878
+max_clients:1000
+
+# Get specific section
+INFO server
+INFO
+# Server
+version:1.0.0
+uptime_in_seconds:3600
+connected_clients:5
+
+INFO memory
+INFO
+# Memory
+used_memory:0
+used_memory_human:0B
+mem_fragmentation_ratio:1.00
+
+INFO storage
+INFO
+# Storage
+db_keys:1500
+db_bytes:0
+keyspace_hits:0
+
+INFO replication
+INFO
+# Replication
+repl_enabled:unknown
+repl_peers:0
+master_host:localhost
+```
+
+##### STATS Command
+Get server statistics with optional reset.
+
+**Syntax**: `STATS [RESET]\r\n`
+
+```bash
+# Get statistics
+STATS
+STATS
+total_connections:25
+active_connections:3
+total_commands:1250
+uptime_seconds:3600
+
+# Reset statistics
+STATS RESET
+OK
+```
+
+##### DBSIZE Command
+Get the number of keys in the database.
+
+**Syntax**: `DBSIZE\r\n`
+
+```bash
+DBSIZE
+1500
+```
+
+##### Phase 2: Key Management Commands
+
+##### KEYS Command
+List keys matching a pattern (with production guardrails).
+
+**Syntax**: `KEYS <pattern>\r\n`
+
+```bash
+# Get all keys (⚠️ O(n) operation - use SCAN for production)
+KEYS *
+KEYS
+user:100
+user:101
+config:database
+
+# Get keys with prefix
+KEYS user:*
+KEYS
+user:100
+user:101
+
+# Protection against large keyspaces
+KEYS *
+ERROR KEYS refused: 15000 keys exceed limit 10000 (use SCAN or set MERKLE_KV_MAX_KEYS)
+```
+
+##### SCAN Command
+Cursor-based key iteration with production-safe pagination.
+
+**Syntax**: `SCAN <cursor> [MATCH <pattern>] [COUNT <count>]\r\n`
+
+```bash
+# Basic cursor scan
+SCAN 0
+SCAN 10
+key1
+key2
+key3
+
+# Scan with count limit
+SCAN 0 COUNT 5
+SCAN 5
+key1
+key2
+key3
+key4
+key5
+
+# Scan with pattern matching
+SCAN 0 MATCH user:* COUNT 10
+SCAN 0
+user:100
+user:101
+
+# Legacy backward compatibility
+SCAN user:*
+SCAN 0
+user:100
+user:101
+```
+
+##### EXISTS Command
+Check if one or more keys exist.
+
+**Syntax**: `EXISTS <key1> [key2] ...\r\n`
+
+```bash
+# Check single key
+EXISTS user:100
+1
+
+# Check multiple keys
+EXISTS user:100 user:101 user:999
+2
+
+# Non-existent key
+EXISTS nonexistent
+0
+```
+
+##### Phase 3: Synchronization Commands
+
+##### SYNC Command
+Manual peer synchronization with timeout and retry logic.
+
+**Syntax**: `SYNC <host> <port> [--full] [--verify]\r\n`
+
+```bash
+# Sync with peer
+SYNC peer.example.com 7878
+OK
+
+# Sync with timeout protection
+SYNC slow-peer.example.com 7878
+ERROR SYNC failed after 3 attempts: Connection timeout
+```
+
+##### HASH Command
+Get deterministic hash of keyspace for state comparison.
+
+**Syntax**: `HASH [pattern]\r\n`
+
+```bash
+# Get hash of all keys (deterministic - keys sorted lexicographically)
+HASH
+HASH a1b2c3d4e5f6
+
+# Pattern-based hashing not supported
+HASH user:*
+ERROR Pattern-based hashing unsupported
+```
+
+##### REPLICATE Command
+Runtime replication control.
+
+**Syntax**: `REPLICATE <action>\r\n`
+
+```bash
+# Check replication status
+REPLICATE STATUS
+REPLICATION enabled
+
+# Control replication
+REPLICATE DISABLE
+OK
+
+REPLICATE ENABLE
+OK
+```
 
 #### Numeric Operations
 
@@ -1117,6 +1423,31 @@ OK
 $ nc -v localhost 7878
 Connection to localhost 7878 port [tcp/*] succeeded!
 
+# Test connectivity (Issue #27 - Phase 1)
+PING production
+PONG production
+
+ECHO hello world
+hello world
+
+# Get server information
+INFO server
+INFO
+# Server
+version:1.0.0
+uptime_in_seconds:3600
+node_id:node-alpha
+connected_clients:1
+total_commands_processed:5
+
+# Check server statistics
+STATS
+STATS
+total_connections:25
+active_connections:1
+total_commands:1250
+uptime_seconds:3600
+
 # Store some data
 SET user:alice Alice Smith
 OK
@@ -1127,12 +1458,37 @@ OK
 SET counter:views 1500
 OK
 
+# Check database size
+DBSIZE
+3
+
+# Key management commands (Issue #27 - Phase 2)
+KEYS *
+KEYS
+user:alice
+user:bob
+counter:views
+
+# Use SCAN for production-safe pagination
+SCAN 0 COUNT 2
+SCAN 2
+user:alice
+user:bob
+
+SCAN 2 COUNT 2
+SCAN 0
+counter:views
+
+# Check key existence
+EXISTS user:alice user:bob user:nonexistent
+2
+
 # Retrieve data
 GET user:alice
-Alice Smith
+VALUE Alice Smith
 
 GET counter:views
-1500
+VALUE 1500
 
 # Numeric operations
 INCR counter:views
@@ -1154,31 +1510,38 @@ Hello World!
 PREPEND greeting "Hi, "
 Hi, Hello World!
 
-# Server information
-VERSION
-MerkleKV 1.0.0
+# Synchronization commands (Issue #27 - Phase 3)
+HASH
+HASH a1b2c3d4e5f6789abcdef
 
-INFO
-# Server Information
-version:1.0.0
-uptime_seconds:3600
-node_id:node-alpha
-memory_usage_mb:128
-total_keys:5
+REPLICATE STATUS
+REPLICATION disabled
+
+# Manual peer sync (would connect to actual peer)
+SYNC 192.168.1.10 7878
+ERROR Connection refused
 
 # Update existing data
 SET counter:views 2000
 OK
 
 GET counter:views
-2000
+VALUE 2000
 
 # Delete data
 DEL user:bob
 DELETED
 
 GET user:bob
-(null)
+NOT_FOUND
+
+# Final database check
+DBSIZE
+3
+
+# Server version
+VERSION
+MerkleKV 1.0.0
 
 # Close connection
 # Use Ctrl+C or Ctrl+D to exit
@@ -1434,8 +1797,26 @@ ps aux | grep merkle-kv
 
 ### Environment Variable Overrides
 
-Configuration values can be overridden using environment variables:
+Configuration values can be overridden using environment variables for production tuning:
 
+#### Issue #27 Production Guardrails
+```bash
+# KEYS command protection (default: 10000)
+export MERKLE_KV_MAX_KEYS=5000
+
+# SCAN pagination defaults
+export MERKLE_KV_SCAN_COUNT=25        # Default COUNT (default: 50)
+export MERKLE_KV_SCAN_MAX_COUNT=500   # Maximum COUNT (default: 1000)
+
+# SYNC operation timeouts and retries
+export MERKLE_KV_SYNC_TIMEOUT_MS=3000  # Per-operation timeout (default: 5000)
+export MERKLE_KV_SYNC_RETRIES=5        # Retry attempts (default: 3)
+
+# Start with production guardrails
+cargo run --release -- --config node.toml
+```
+
+#### General Configuration Overrides
 ```bash
 # Override node ID
 export MERKLE_KV_NODE_ID="production-node-1"
@@ -1445,6 +1826,10 @@ export MERKLE_KV_MQTT_BROKER_ADDRESS="tcp://production-mqtt.example.com:1883"
 
 # Override bind port
 export MERKLE_KV_NETWORK_BIND_PORT=8080
+
+# Server configuration
+export MERKLE_KV_PORT=7878            # TCP port (default: 7878)
+export MERKLE_KV_CONFIG=config.toml   # Config file path (default: config.toml)
 
 # Start with overrides
 cargo run --release -- --config node.toml
@@ -1499,7 +1884,21 @@ We have an exciting future planned for MerkleKV! Below is a comprehensive status
   - ✅ Implement proper error responses and status codes
   - ✅ Add comprehensive logging and monitoring capabilities
 
-### Phase 2.5: Enhanced Protocol Support ✅ COMPLETED
+### Phase 2.5: Administrative Command Hardening ✅ COMPLETED
+**Priority: High** - Production-ready administrative interface (Issue #27)
+
+- [x] **Issue #27: Administrative Commands Phases 1-3** ✅
+  - ✅ **Phase 1**: Information commands (PING, ECHO, INFO, STATS, DBSIZE) with stable metrics schema
+  - ✅ **Phase 2**: Key management commands (KEYS, SCAN, EXISTS) with production guardrails
+  - ✅ **Phase 3**: Synchronization commands (SYNC, HASH, REPLICATE) with timeout/retry logic
+  - ✅ **Protocol Documentation**: Comprehensive CRLF compliance and response format standards
+  - ✅ **Observability Placeholders**: Stable field names for monitoring dashboard integration
+  - ✅ **Safety Guardrails**: Environment-tunable limits for expensive operations
+  - ✅ **Enhanced Test Coverage**: 39 administrative commands + 9 replication tests + edge cases
+  - ✅ **Security Preparation**: Framework for future authentication/authorization
+  - ✅ **Release Documentation**: Complete operator runbook and deployment guides
+
+### Phase 2.6: Enhanced Protocol Support ✅ COMPLETED
 **Priority: High** - Extended functionality beyond basic KV operations
 
 - [x] **Issue #5.1: Numeric Operations** ✅

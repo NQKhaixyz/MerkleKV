@@ -181,6 +181,32 @@ jobs:
     name: Replication Tests
     runs-on: ubuntu-latest
 
+    # Academic Purpose: MQTT broker service container provides distributed message 
+    # infrastructure necessary for replication synchronization, anti-entropy mechanisms,
+    # and fault tolerance validation in distributed MerkleKV cluster testing
+    services:
+      mosquitto:
+        image: eclipse-mosquitto:2
+        ports:
+          - 1883:1883
+        options: >-
+          --health-cmd "mosquitto_pub -h localhost -t health -m test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
+
+    # Academic Purpose: Standardized environment configuration ensures reproducible
+    # distributed system testing across cluster nodes with consistent networking,
+    # timeout handling, and debugging capabilities for scholarly validation
+    env:
+      MQTT_HOST: localhost
+      MQTT_PORT: 1883
+      RUST_LOG: info
+      RUST_BACKTRACE: 1
+      TEST_TIMEOUT_SECS: 120
+      TEST_POLL_INTERVAL_MS: 500
+      MERKLEKV_PORT_BASE: 7878
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -232,11 +258,33 @@ jobs:
         env:
           RUST_LOG: info
 
+      # Academic Purpose: Merkle tree anti-entropy synchronization tests validate
+      # distributed system consistency mechanisms ensuring eventual convergence
+      # through efficient tree-based divergence detection and selective repair
+      - name: Run Merkle Sync Tests
+        run: |
+          cd tests/integration
+          python -m pytest test_merkle_sync.py -v --tb=short --junitxml=merkle_sync_results.xml
+        env:
+          RUST_LOG: info
+
+      # Academic Purpose: System recovery and fault tolerance tests verify distributed
+      # cluster resilience under various failure scenarios including node crashes,
+      # network partitions, and cascading failures with proper restoration validation
+      - name: Run Recovery Tests
+        run: |
+          cd tests/integration
+          python -m pytest test_recovery.py -v --tb=short --junitxml=recovery_results.xml
+        env:
+          RUST_LOG: info
+
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: replication-results
+          # Academic Purpose: Glob pattern encompasses all distributed system test
+          # results including replication, Merkle sync, and recovery validation
           path: |
             tests/integration/*_results.xml
             tests/integration/test_report.txt
@@ -342,7 +390,9 @@ jobs:
           # List test artifacts
           echo "## Test Artifacts" >> test_summary.md
           echo "" >> test_summary.md
-          find test-results -name "*.xml" -o -name "*.txt" | head -20 | while read file; do
+          # Academic Purpose: Expanded artifact listing accommodates comprehensive
+          # test suites with multiple XML reports from distributed system validation
+          find test-results -name "*.xml" -o -name "*.txt" | head -40 | while read file; do
             echo "- $(basename "$file")" >> test_summary.md
           done
 

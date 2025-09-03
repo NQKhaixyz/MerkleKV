@@ -332,7 +332,7 @@ class MerkleKVClient:
         if header == "NOT_FOUND":
             return []
 
-        if not header.startswith("KEYS "):
+        if not (header.startswith("KEYS ") or header.startswith("SCAN ")):
             return [l.strip() for l in lines if l and not l.startswith("VALUES")]
         try:
             n = int(header.split()[1])
