@@ -1,0 +1,47 @@
+{
+  "name": "@merklekv/client",
+  "version": "1.0.0",
+  "description": "Node.js client library for MerkleKV distributed key-value store",
+  "keywords": [
+    "database",
+    "key-value",
+    "distributed",
+    "merkle-tree",
+    "client"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "prepublishOnly": "npm run build && npm test",
+    "example": "node examples/basic.js"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AI-Decenter/MerkleKV.git",
+    "directory": "clients/nodejs"
+  },
+  "homepage": "https://github.com/AI-Decenter/MerkleKV",
+  "bugs": {
+    "url": "https://github.com/AI-Decenter/MerkleKV/issues"
+  },
+  "author": "MerkleKV Team <hello@merklekv.io>",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
