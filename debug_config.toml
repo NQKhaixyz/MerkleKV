@@ -1,0 +1,12 @@
+host = "127.0.0.1"
+port = 7451
+engine = "sled"
+storage_path = "/tmp/debug_test"
+sync_interval_seconds = 60
+
+[replication]
+enabled = true
+mqtt_broker = "test.mosquitto.org"
+mqtt_port = 1883  
+topic_prefix = "test_debug"
+client_id = "debug_node"

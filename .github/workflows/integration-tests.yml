@@ -211,26 +211,19 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Test MQTT Connectivity
+      - name: Run Replication Unit Tests (CI mode)
         run: |
           cd tests/integration
-          python run_replication_tests.py connectivity
+          python -m pytest test_replication_unit.py test_current_replication_behavior.py -v --tb=short -m "not slow" --junitxml=replication_results.xml
         env:
           RUST_LOG: info
-
-      - name: Run Simple Replication Tests
+        
+      - name: Note about MQTT tests
         run: |
           cd tests/integration
-          python run_replication_tests.py simple
-        env:
-          RUST_LOG: info
-
-      - name: Run Full Replication Tests
-        run: |
-          cd tests/integration
-          python -m pytest test_replication.py -v --tb=short --junitxml=replication_results.xml
-        env:
-          RUST_LOG: info
+          echo "ℹ️  MQTT replication tests are marked as @pytest.mark.slow and are excluded from CI"
+          echo "ℹ️  These tests require external MQTT broker connectivity and take 30+ seconds each"
+          echo "ℹ️  Run locally with: python run_tests.py --mode slow"
 
       - name: Upload test results
         uses: actions/upload-artifact@v4

@@ -14,6 +14,7 @@ import os
 import threading
 import paho.mqtt.client as mqtt
 
+@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_mqtt_broker_connectivity():
     """Test that we can connect to the public MQTT broker."""
@@ -135,6 +136,7 @@ async def execute_command(host: str, port: int, command: str) -> str:
         writer.close()
         await writer.wait_closed()
 
+@pytest.mark.slow
 @pytest.mark.asyncio 
 async def test_basic_replication():
     """Test basic replication between two nodes."""

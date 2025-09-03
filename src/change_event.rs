@@ -19,6 +19,7 @@
 //! and makes LWW straightforward: the winner simply becomes “the value”.
 
 use serde::{Deserialize, Serialize};
+use base64::prelude::*;
 
 /// The operation kind carried by a change event.
 ///
@@ -56,6 +57,7 @@ pub enum OpKind {
 /// - `op_id`: A 128-bit identifier (UUID v4) for idempotency/deduplication.
 /// - `prev`: Optional 32-byte Merkle root (or leaf) hash to assist anti-entropy.
 /// - `ttl`: Optional TTL-in-seconds hint (not enforced by the in-memory engine).
+/// - `seq`: Optional sequence number per publisher for gap detection (backward-compatible).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChangeEvent {
     /// Schema version (allows additive, backward-compatible upgrades)
@@ -76,6 +78,8 @@ pub struct ChangeEvent {
     pub prev: Option<[u8; 32]>,
     /// Optional TTL in seconds (advisory in this prototype)
     pub ttl: Option<u64>,
+    /// Optional sequence number per publisher for gap detection (backward-compatible)
+    pub seq: Option<u64>,
 }
 
 impl ChangeEvent {
@@ -106,6 +110,7 @@ impl ChangeEvent {
             op_id,
             prev,
             ttl,
+            seq: None, // Default sequence number to None for backward compatibility
         }
     }
 
@@ -248,7 +253,7 @@ mod tests {
                 }
                 _ => {
                     if let Some(bytes) = &ev.val {
-                        let s = String::from_utf8(bytes.clone()).unwrap_or_else(|_| base64::encode(bytes));
+                        let s = String::from_utf8(bytes.clone()).unwrap_or_else(|_| BASE64_STANDARD.encode(bytes));
                         self.store.insert(ev.key.clone(), s);
                     }
                 }
@@ -332,7 +337,7 @@ fn non_utf8_value_safe_handling() {
     applier.apply(&ev);
     // LocalApplier stringify non-UTF8 via base64 fallback
     let got = applier.store.get("bin").unwrap();
-    assert_eq!(got, &base64::encode(&bytes));
+    assert_eq!(got, &BASE64_STANDARD.encode(&bytes));
 }
 #[test]
 fn idempotency_burst_duplicates() {
